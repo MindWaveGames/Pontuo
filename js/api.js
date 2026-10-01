@@ -1,5 +1,5 @@
 const Api = (() => {
-  const K = 'pontuo_sessao';
+  const K = 'pontuo_sessao', KA = 'pontuo_aluno';
   const post = async (rota, corpo) => {
     const r = await fetch(`${PONTUO.API}/${rota}`, {
       method: 'POST',
@@ -10,18 +10,45 @@ const Api = (() => {
     if (!r.ok) throw new Error(d.erro || 'erro_rede');
     return d;
   };
+  // Aluno fica logado neste aparelho (localStorage); professor só na aba (sessionStorage).
+  const guarda = (st, k) => ({
+    ler() { try { return JSON.parse(st.getItem(k)); } catch (e) { return null; } },
+    gravar(v) { try { st.setItem(k, JSON.stringify(v)); } catch (e) {} },
+    apagar() { try { st.removeItem(k); } catch (e) {} },
+  });
+  const prof = guarda(sessionStorage, K), alu = guarda(localStorage, KA);
+
   return {
     async entrar(chave) {
       const d = await post('validar.php', { chave });
-      try { sessionStorage.setItem(K, JSON.stringify({ token: d.token, nome: d.professor })); } catch (e) {}
+      prof.gravar({ token: d.token, nome: d.professor });
       return d;
     },
-    sessao() { try { return JSON.parse(sessionStorage.getItem(K)); } catch (e) { return null; } },
+    sessao() { return prof.ler(); },
     async valida() {
-      const s = this.sessao();
+      const s = prof.ler();
       if (!s) return false;
       try { return (await post('verificar.php', { token: s.token })).valido === true; } catch (e) { return false; }
     },
-    sair() { try { sessionStorage.removeItem(K); } catch (e) {} },
+    sair() { prof.apagar(); },
+
+    aluno: {
+      async cadastrar(apelido, pin) {
+        const d = await post('aluno_cadastrar.php', { apelido, pin });
+        alu.gravar({ token: d.token }); return d.aluno;
+      },
+      async entrar(apelido, pin) {
+        const d = await post('aluno_entrar.php', { apelido, pin });
+        alu.gravar({ token: d.token }); return d.aluno;
+      },
+      async perfil() {
+        const s = alu.ler();
+        if (!s) return null;
+        try { return (await post('aluno_perfil.php', { token: s.token })).aluno; }
+        catch (e) { if (e.message === 'token_invalido') alu.apagar(); return null; }
+      },
+      token() { const s = alu.ler(); return s ? s.token : null; },
+      sair() { alu.apagar(); },
+    },
   };
 })();
