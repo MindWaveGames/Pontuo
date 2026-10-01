@@ -1,0 +1,27 @@
+.jogo{position:fixed;inset:0;z-index:10;background:var(--violeta);color:#fff;overflow-y:auto;display:flex;justify-content:center;padding:16px}
+.jogo[hidden]{display:none}
+.jogo-in{width:100%;max-width:720px;margin:auto;text-align:center;padding:56px 0 24px}
+.jogo .sair{position:fixed;top:12px;right:12px;background:#fff;color:var(--marinho);border:3px solid var(--marinho);border-radius:12px;padding:8px 14px;font-weight:700;cursor:pointer;min-height:44px}
+.jogo h2{font-size:1.7rem;margin:8px 0 16px}
+.codigo{font:800 clamp(3rem,16vw,6rem) var(--fonte-titulo);letter-spacing:.12em;background:var(--amarelo);color:var(--marinho);border:4px solid var(--marinho);border-radius:20px;padding:4px 20px;display:inline-block;box-shadow:0 6px 0 var(--marinho)}
+.link{word-break:break-all;opacity:.85;font-size:.9rem}
+.nomes{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:12px 0 20px}
+.nomes span{background:#ffffff26;border-radius:999px;padding:6px 14px}
+.ops{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
+.op{display:flex;align-items:center;gap:10px;text-align:left;font-size:1.05rem;font-weight:700;color:var(--marinho);border:3px solid var(--marinho);border-radius:16px;padding:16px;min-height:76px;box-shadow:0 4px 0 var(--marinho);cursor:pointer}
+.op:disabled{cursor:default}
+.op b{background:var(--marinho);color:#fff;border-radius:8px;min-width:30px;height:30px;display:grid;place-items:center}
+.op em{margin-left:auto;font-style:normal;background:#fff;border-radius:999px;padding:2px 10px}
+.op0{background:#ff5c5c}.op1{background:#4db3ff}.op2{background:var(--amarelo)}.op3{background:#3ddc84}
+.jogo .ops:has(.certa) .op:not(.certa){opacity:.4}
+.certa{outline:5px solid #fff}
+.barra{height:10px;background:#ffffff33;border-radius:999px;overflow:hidden}
+.barra i{display:block;height:100%;background:var(--amarelo);animation:enc linear forwards}
+@keyframes enc{from{width:100%}to{width:0}}
+.rk{list-style:decimal inside;padding:0;margin:8px auto 20px;max-width:420px;text-align:left}
+.rk li{display:flex;justify-content:space-between;background:#ffffff1f;border-radius:10px;padding:8px 12px;margin-bottom:6px}
+.acerto{color:#3ddc84}.erro{color:#ff8a8a}
+.acoes select{padding:12px;border-radius:12px;border:3px solid var(--marinho);font-size:1rem}
+#v-quizz textarea{width:100%;border-radius:12px;border:3px solid var(--marinho);padding:12px;font:inherit;color:var(--marinho)}
+@media(max-width:560px){.ops{grid-template-columns:1fr}.jogo-in{padding-top:64px}}
+@media(prefers-reduced-motion:reduce){.barra i{animation:none}}
