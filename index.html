@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pontuô</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<canvas id="bg" aria-hidden="true"></canvas>
+<div class="shell">
+  <main class="painel">
+    <header>
+      <a class="logo" href="#menu">Pontuô</a><!-- troque por <img src="images/logo.svg"> -->
+      <nav>
+        <button data-go="menu">Menu</button>
+        <button data-go="entrar">Entrar</button>
+        <button data-go="quizz">Quizz</button>
+        <button data-go="ranking">Ranking</button>
+        <button data-go="perfil">Perfil</button>
+      </nav>
+      <button class="avatar" data-go="perfil" aria-label="Perfil"></button>
+    </header>
+
+    <section id="v-menu">
+      <h1>Bem-vindo ao Pontuô</h1>
+      <p>Quizzes ao vivo para a sala de aula.</p>
+      <div class="acoes">
+        <button class="grande" data-go="entrar">Entrar em uma sala</button>
+        <button class="grande sec" id="abrir-prof">Sou professor</button>
+      </div>
+    </section>
+
+    <section id="v-entrar" hidden>
+      <h1>Entrar em sala</h1>
+      <form id="f-sala">
+        <input id="sala" placeholder="Código da sala" maxlength="8" autocapitalize="characters" required>
+        <input id="apelido" placeholder="Seu nome (opcional, entra como anônimo)" maxlength="30">
+        <button class="grande">Entrar</button>
+      </form>
+      <p id="msg-sala" class="msg"></p>
+    </section>
+
+    <section id="v-quizz" hidden>
+      <h1>Criar quizz</h1>
+      <div id="quizz-bloq">
+        <p>Somente professores com licença podem criar quizzes.</p>
+        <button class="grande" id="abrir-prof2">Entrar com minha chave</button>
+      </div>
+      <div id="quizz-ok" hidden><p>Criador de quizz: próxima etapa.</p></div>
+    </section>
+
+    <section id="v-ranking" hidden>
+      <h1>Ranking</h1>
+      <div class="duas">
+        <div><h2>Professores</h2><p class="vazio">Sem dados ainda.</p></div>
+        <div><h2>Alunos</h2><p class="vazio">Apenas alunos cadastrados aparecem aqui.</p></div>
+      </div>
+    </section>
+
+    <section id="v-perfil" hidden>
+      <h1>Perfil</h1>
+      <p>Edição de perfil disponível após o cadastro (próxima etapa).</p>
+      <button class="sec" id="btn-sair" hidden>Sair da conta de professor</button>
+    </section>
+  </main>
+
+  <aside class="card">
+    <div class="quem">
+      <div class="avatar"></div>
+      <div><small id="card-papel">VISITANTE</small><br><strong id="card-nome">Anônimo</strong></div>
+    </div>
+    <div class="interno">
+      <div class="stats">
+        <div><small>NÍVEL</small><b id="card-nivel">—</b></div>
+        <div><small>PONTUAÇÃO</small><b id="card-pts">—</b></div>
+      </div>
+      <h2>Histórico</h2>
+      <p class="vazio">Nenhuma partida ainda.</p>
+    </div>
+  </aside>
+</div>
+
+<dialog id="dlg">
+  <form id="f-chave">
+    <h2>Acesso do professor</h2>
+    <input id="chave" placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="32" autocomplete="off" required>
+    <p id="msg-chave" class="msg"></p>
+    <div class="acoes"><button>Entrar</button><button type="button" class="sec" id="fechar">Cancelar</button></div>
+  </form>
+</dialog>
+
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script src="js/bg.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
