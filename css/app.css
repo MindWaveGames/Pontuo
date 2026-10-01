@@ -13,6 +13,9 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%}
+html{-webkit-text-size-adjust:100%}
+button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.painel,.card{min-width:0}
 body{background:var(--violeta);color:var(--branco);font-family:system-ui,-apple-system,'Segoe UI',sans-serif}
 #bg{position:fixed;inset:0;width:100%;height:100%;z-index:0}
 .shell{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:24px;max-width:1100px;margin:0 auto;padding:24px 16px}
@@ -25,7 +28,6 @@ header{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .logo img{height:150px;width:auto;display:block}
 nav{display:flex;gap:4px;overflow-x:auto;margin-left:auto}
 nav button{background:none;color:var(--branco);border:0;border-radius:999px;padding:7px 15px;cursor:pointer;font:600 1rem var(--fonte-titulo)}
-nav button:hover{background:#ffffff22}
 nav button.on{background:var(--amarelo);color:var(--marinho)}
 
 .avatar{width:48px;height:48px;border-radius:50%;background:var(--amarelo);border:3px solid var(--marinho);flex:none;position:relative;cursor:pointer;padding:0}
@@ -38,7 +40,7 @@ h2{font-size:1.15rem;margin:16px 0 6px}
 button{font:inherit}
 
 .grande{padding:12px 22px;font:800 1.1rem var(--fonte-titulo);border-radius:14px;border:3px solid var(--marinho);background:var(--amarelo);color:var(--marinho);box-shadow:0 4px 0 var(--marinho);cursor:pointer;transition:transform .08s,box-shadow .08s}
-.grande:hover{transform:translateY(-1px)}
+@media(hover:hover){nav button:hover{background:#ffffff22}.grande:hover{transform:translateY(-1px)}}
 .grande:active{transform:translateY(3px);box-shadow:0 1px 0 var(--marinho)}
 .grande.sec{background:var(--branco)}
 .sec{background:var(--branco);color:var(--marinho);border:3px solid var(--marinho);border-radius:12px;padding:8px 16px;font-weight:700;cursor:pointer}
@@ -71,8 +73,28 @@ dialog .sec{background:var(--branco)}
 :focus-visible{outline:3px solid var(--amarelo);outline-offset:2px}
 
 @media(max-width:820px){
-  .shell{grid-template-columns:1fr}
+  .shell{grid-template-columns:1fr;gap:16px;padding:16px 12px 24px}
   .duas{grid-template-columns:1fr}
-  header{flex-wrap:wrap}
-  nav{order:3;width:100%;margin-left:0}
+  header{flex-wrap:wrap;row-gap:10px}
+  .logo img{height:42px}
+  nav{order:3;width:100%;margin-left:0;gap:2px;scrollbar-width:none}
+  nav::-webkit-scrollbar{display:none}
+  nav button{flex:1 1 auto;min-height:44px;padding:8px 10px;font-size:.95rem}
+  .painel{padding:14px 16px 24px;min-height:0;border-radius:16px}
+  .card{border-radius:24px;padding:16px}
+  .interno{min-height:0}
+}
+@media(max-width:560px){
+  h1{font-size:1.6rem}
+  section{padding-top:20px}
+  .acoes{flex-direction:column}
+  .acoes button,.grande{width:100%;min-height:50px}
+  form{max-width:none}
+  input{min-height:48px}
+  .sec,dialog button{min-height:44px}
+  .painel,.card{box-shadow:0 4px 0 var(--marinho)}
+}
+@media(max-width:360px){
+  nav button{padding:8px 6px;font-size:.88rem}
+  .logo img{height:36px}
 }
