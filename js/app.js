@@ -16,6 +16,10 @@ function render() {
   $('#quizz-bloq').hidden = on;
   $('#quizz-ok').hidden = !on;
   $('#btn-sair').hidden = !on;
+  if (on && !$('#quizz-ok').dataset.pronto) {
+    $('#quizz-ok').dataset.pronto = 1;
+    carregarJogo().then(J => J.editor($('#quizz-ok'))).catch(() => { $('#quizz-ok').textContent = 'Não foi possível carregar o criador de quizz.'; });
+  }
 }
 
 function ir(v) {
@@ -50,13 +54,26 @@ $('#f-chave').addEventListener('submit', async (e) => {
 
 $('#btn-sair').addEventListener('click', () => { Api.sair(); prof = null; ir('menu'); });
 
-$('#f-sala').addEventListener('submit', (e) => {
+// O jogo (PeerJS + jogo.js) só é baixado quando alguém usa a sala.
+let _jogo;
+const carregar = (tag, attrs) => new Promise((ok, no) => {
+  const e = Object.assign(document.createElement(tag), attrs);
+  e.onload = ok; e.onerror = no; document.head.append(e);
+});
+const carregarJogo = () => _jogo || (_jogo = Promise.all([
+  carregar('link', { rel: 'stylesheet', href: 'css/jogo.css' }),
+  carregar('script', { src: 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js' }),
+]).then(() => carregar('script', { src: 'js/jogo.js' })).then(() => window.Jogo));
+
+$('#f-sala').addEventListener('submit', async (e) => {
   e.preventDefault();
-  $('#msg-sala').textContent = 'A conexão com a sala (P2P) será ligada na próxima etapa.';
+  try { (await carregarJogo()).entrar($('#sala').value.trim(), $('#apelido').value.trim()); }
+  catch (err) { $('#msg-sala').textContent = 'Não foi possível carregar o jogo. Verifique a internet.'; }
 });
 
 (async () => {
   const s = Api.sessao();
   if (s && await Api.valida()) prof = { nome: s.nome }; else Api.sair();
-  ir(location.hash.slice(1));
+  const sala = new URLSearchParams(location.search).get('sala');
+  if (sala) { $('#sala').value = sala.toUpperCase().slice(0, 8); ir('entrar'); } else ir(location.hash.slice(1));
 })();
