@@ -5,14 +5,17 @@ const ERROS = {
   licenca_bloqueada: 'Esta licença está bloqueada. Fale com o administrador.',
   muitas_tentativas: 'Muitas tentativas. Aguarde alguns minutos.',
 };
-let prof = null; // { nome } quando o professor está logado
+let prof = null;  // { nome } quando o professor está logado
+let aluno = null; // { apelido, nivel, pontos } quando o aluno está logado
 
 function render() {
   const on = !!prof;
-  $('#card-papel').textContent = on ? 'PROFESSOR' : 'VISITANTE';
-  $('#card-nome').textContent = on ? prof.nome : 'Anônimo'; // textContent: nunca interpreta HTML
-  $('#card-nivel').textContent = on ? '1' : '—';
-  $('#card-pts').textContent = on ? '0' : '—';
+  // textContent: nomes nunca são interpretados como HTML
+  $('#card-papel').textContent = on ? 'PROFESSOR' : aluno ? 'ALUNO' : 'VISITANTE';
+  $('#card-nome').textContent = on ? prof.nome : aluno ? aluno.apelido : 'Anônimo';
+  $('#card-nivel').textContent = on ? '1' : aluno ? aluno.nivel : '—';
+  $('#card-pts').textContent = on ? '0' : aluno ? aluno.pontos : '—';
+  $('#conta').hidden = on;
   $('#quizz-bloq').hidden = on;
   $('#quizz-ok').hidden = !on;
   $('#btn-sair').hidden = !on;
@@ -28,6 +31,7 @@ function ir(v) {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.go === v));
   if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v);
   render();
+  if (v === 'perfil') montarConta();
 }
 
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => ir(b.dataset.go)));
@@ -67,13 +71,27 @@ const carregarJogo = () => _jogo || (_jogo = Promise.all([
 
 $('#f-sala').addEventListener('submit', async (e) => {
   e.preventDefault();
-  try { (await carregarJogo()).entrar($('#sala').value.trim(), $('#apelido').value.trim()); }
+  try { (await carregarJogo()).entrar($('#sala').value.trim(), aluno ? aluno.apelido : $('#apelido').value.trim()); }
   catch (err) { $('#msg-sala').textContent = 'Não foi possível carregar o jogo. Verifique a internet.'; }
 });
 
+let _conta;
+async function montarConta() {
+  if (prof) return;
+  try {
+    await (_conta || (_conta = carregar('script', { src: 'js/conta.js' })));
+    Conta.montar($('#conta'), { aluno, aoMudar: (a) => { aluno = a; render(); montarConta(); } });
+  } catch (err) { $('#conta').textContent = 'Não foi possível carregar a conta. Verifique a internet.'; }
+}
+
 (async () => {
+  const caixa = document.createElement('div');
+  caixa.id = 'conta';
+  $('#v-perfil').insertBefore(caixa, $('#btn-sair'));
+  const aviso = $('#v-perfil p'); if (aviso) aviso.remove(); // texto provisório da etapa anterior
   const s = Api.sessao();
   if (s && await Api.valida()) prof = { nome: s.nome }; else Api.sair();
+  aluno = await Api.aluno.perfil();
   const sala = new URLSearchParams(location.search).get('sala');
   if (sala) { $('#sala').value = sala.toUpperCase().slice(0, 8); ir('entrar'); } else ir(location.hash.slice(1));
 })();
