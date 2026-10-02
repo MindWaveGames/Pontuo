@@ -53,6 +53,12 @@ const Api = (() => {
         try { return (await post('aluno_perfil.php', { token: s.token })).aluno; }
         catch (e) { if (e.message === 'token_invalido') alu.apagar(); return null; }
       },
+      async trocarPin(pinAtual, pinNovo) {
+        const s = alu.ler();
+        if (!s) throw new Error('token_invalido');
+        const d = await post('aluno_pin.php', { token: s.token, pin_atual: pinAtual, pin_novo: pinNovo });
+        alu.gravar({ token: d.token });
+      },
       async ficha() {
         const s = alu.ler();
         if (!s) return null;
