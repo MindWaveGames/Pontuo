@@ -26,37 +26,32 @@
   const lista = (rk, max = 5) => h('ol', { class: 'rk' }, ...rk.slice(0, max).map((j, n) =>
     h('li', {}, h('span', { textContent: `${n + 1}. ${j.nome}` }), h('b', { textContent: j.pts }))));
 
-  // ---------- Quiz em texto: blocos separados por linha em branco; "*" marca a certa ----------
-  function parse(txt) {
-    return txt.split(/\n\s*\n/).map(b => b.split('\n').map(l => l.trim()).filter(Boolean))
-      .filter(l => l.length >= 3).map(l => {
-        const [q, ...r] = l, o = r.slice(0, 4), c = o.findIndex(x => x.startsWith('*'));
-        return c < 0 ? null : { q: q.slice(0, 200), op: o.map(x => x.replace(/^\*/, '').trim().slice(0, 80)), c };
-      }).filter(Boolean);
+  // ---------- QR code (biblioteca local js/vendor/qrcode.js) ----------
+  function qrSvg(texto) {
+    if (typeof qrcode !== 'function') return h('span');
+    const q = qrcode(0, 'M'); q.addData(texto); q.make();
+    const n = q.getModuleCount(), m = 4, tam = n + 2 * m, ns = 'http://www.w3.org/2000/svg';
+    let d = '';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c + m} ${r + m}h1v1h-1z`;
+    const svg = document.createElementNS(ns, 'svg'), fundo = document.createElementNS(ns, 'rect'), cod = document.createElementNS(ns, 'path');
+    svg.setAttribute('viewBox', `0 0 ${tam} ${tam}`); svg.setAttribute('class', 'qr'); svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', 'QR code para entrar na sala'); svg.setAttribute('shape-rendering', 'crispEdges');
+    fundo.setAttribute('width', tam); fundo.setAttribute('height', tam); fundo.setAttribute('fill', '#fff');
+    cod.setAttribute('d', d); cod.setAttribute('fill', '#17134e');
+    svg.append(fundo, cod);
+    return svg;
   }
-  const EXEMPLO = 'Qual é a capital do Brasil?\nRio de Janeiro\n*Brasília\nSalvador\nSão Paulo\n\n2 + 2 = ?\n3\n*4\n5\n22';
 
-  function editor(el) {
-    let salvo = ''; try { salvo = localStorage.getItem('pontuo_quiz') || ''; } catch (e) {}
-    const ta = h('textarea', { rows: 12, placeholder: EXEMPLO, value: salvo });
-    const tempo = h('select', {}, ...[10, 20, 30].map(s => h('option', { value: s, textContent: s + ' s por pergunta', selected: s === 20 })));
-    const msg = h('p', { class: 'msg' });
-    el.replaceChildren(
-      h('p', {}, 'Uma pergunta por bloco (separe os blocos com uma linha em branco). Primeira linha = pergunta, depois 2 a 4 alternativas. Marque a certa com *'),
-      ta, h('div', { class: 'acoes' }, tempo,
-        h('button', { class: 'grande', textContent: 'Abrir sala', onclick: async () => {
-          const quiz = parse(ta.value);
-          if (!quiz.length) { msg.textContent = 'Nenhuma pergunta válida. Veja o formato de exemplo no campo.'; return; }
-          msg.textContent = 'Verificando licença…';
-          if (!(await Api.valida())) { msg.textContent = 'Sua sessão expirou. Entre com a chave novamente.'; return; }
-          msg.textContent = '';
-          try { localStorage.setItem('pontuo_quiz', ta.value); } catch (e) {}
-          hospedar(quiz, +tempo.value);
-        } })), msg);
+  // Confere a licença no servidor e abre a sala. Devolve um texto de erro, ou null se abriu.
+  async function abrirSala(quiz, seg) {
+    if (!(await Api.valida())) return 'Sua sessão expirou. Entre com a chave novamente.';
+    hospedar(quiz, seg);
+    return null;
   }
 
   // ---------- Host (professor) ----------
-  function hospedar(quiz, seg) {
+  function hospedar(quiz, segPadrao) {
+    let seg = segPadrao; // tempo da pergunta atual (cada pergunta pode ter o seu)
     const jog = new Map(); // id do peer -> { nome, pts, r, g, c }
     let i = -1, t0 = 0, timer = null, fase = 'lobby', codigo = '';
     const pid = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -89,13 +84,13 @@
     function lobby() {
       if (fase !== 'lobby') return;
       const link = location.origin + location.pathname + '?sala=' + codigo + '#entrar';
-      tela(h('p', { textContent: 'Código da sala' }), h('div', { class: 'codigo', textContent: codigo }),
+      tela(h('p', { textContent: 'Código da sala' }), h('div', { class: 'codigo', textContent: codigo }), qrSvg(link),
         h('p', { class: 'link', textContent: link }),
         h('p', { textContent: jog.size + ' jogador(es) na sala' }),
         h('div', { class: 'nomes' }, ...[...jog.values()].map(j => h('span', { textContent: j.nome }))),
         h('button', { class: 'grande', textContent: 'Iniciar', disabled: !jog.size, onclick: proxima }));
     }
-    function proxima() { i++; if (i >= quiz.length) return fim(); fase = 'pergunta'; jog.forEach(j => { j.r = null; j.g = 0; }); t0 = Date.now();
+    function proxima() { i++; if (i >= quiz.length) return fim(); seg = quiz[i].seg || segPadrao; fase = 'pergunta'; jog.forEach(j => { j.r = null; j.g = 0; }); t0 = Date.now();
       const p = quiz[i]; todos({ t: 'pergunta', i, total: quiz.length, q: p.q, op: p.op, seg });
       clearTimeout(timer); timer = setTimeout(encerrar, seg * 1000); pergunta(); }
     function pergunta() {
@@ -169,5 +164,5 @@
     setTimeout(() => { if (!ok && peer) falha(); }, 10000);
   }
 
-  window.Jogo = { editor, entrar };
+  window.Jogo = { abrirSala, entrar };
 })();
