@@ -12,8 +12,30 @@
     pin_invalido: 'PIN: de 4 a 6 números.',
     apelido_em_uso: 'Esse apelido já existe. Escolha outro.',
     credenciais_invalidas: 'Apelido ou PIN incorretos.',
+    pin_atual_incorreto: 'O PIN atual está incorreto.',
+    token_invalido: 'Sua sessão expirou. Entre novamente.',
     muitas_tentativas: 'Muitas tentativas. Aguarde alguns minutos.',
   };
+
+  function trocarPin(aoMudar) {
+    const campo = (ph, ac) => h('input', { type: 'password', placeholder: ph, inputMode: 'numeric', maxLength: 6, pattern: '[0-9]{4,6}', autocomplete: ac, required: true });
+    const atual = campo('PIN atual', 'current-password'), novo = campo('PIN novo (4 a 6 números)', 'new-password'), conf = campo('Repita o PIN novo', 'new-password');
+    const msg = h('p', { class: 'msg', role: 'status' }), ok = h('button', { class: 'grande', textContent: 'Trocar PIN' });
+    const form = h('form', { onsubmit: async (e) => {
+      e.preventDefault();
+      if (novo.value !== conf.value) { msg.textContent = 'O PIN novo e a repetição não são iguais.'; return; }
+      msg.textContent = 'Aguarde…'; ok.disabled = true;
+      try {
+        await Api.aluno.trocarPin(atual.value, novo.value);
+        form.reset(); msg.textContent = 'PIN alterado! Nos outros aparelhos será preciso entrar de novo. ✓';
+      } catch (err) {
+        msg.textContent = ERROS[err.message] || 'Não foi possível conectar. Tente novamente.';
+        if (err.message === 'token_invalido') { Api.aluno.sair(); aoMudar(null); }
+      }
+      ok.disabled = false;
+    } }, atual, novo, conf, ok, msg);
+    return h('details', { class: 'trocar' }, h('summary', { textContent: 'Trocar meu PIN' }), form);
+  }
 
   function montar(el, { aluno, aoMudar }) {
     if (aluno) {
@@ -21,7 +43,8 @@
         h('h2', { textContent: `Olá, ${aluno.apelido}!` }),
         h('p', { textContent: `Nível ${aluno.nivel} · ${aluno.pontos} pontos` }),
         h('p', { class: 'vazio', textContent: 'Seu histórico de partidas aparecerá aqui em breve.' }),
-        h('button', { class: 'sec', textContent: 'Sair da conta', onclick: () => { Api.aluno.sair(); aoMudar(null); } }));
+        h('button', { class: 'sec', textContent: 'Sair da conta', onclick: () => { Api.aluno.sair(); aoMudar(null); } }),
+        trocarPin(aoMudar));
       return;
     }
     let modo = 'entrar';
