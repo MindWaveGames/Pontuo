@@ -23,8 +23,8 @@
   const opcoes = (ops, onclick, extra = {}) => h('div', { class: 'ops' }, ...ops.map((t, i) =>
     h('button', { class: 'op op' + i + (extra.c === i ? ' certa' : ''), disabled: !onclick, onclick: () => onclick && onclick(i) },
       h('b', { textContent: LETRAS[i] }), h('span', { textContent: t }), extra.n ? h('em', { textContent: extra.n[i] }) : '')));
-  const lista = (rk, max = 5) => h('ol', { class: 'rk' }, ...rk.slice(0, max).map(j =>
-    h('li', {}, h('span', { textContent: j.nome }), h('b', { textContent: j.pts }))));
+  const lista = (rk, max = 5) => h('ol', { class: 'rk' }, ...rk.slice(0, max).map((j, n) =>
+    h('li', {}, h('span', { textContent: `${n + 1}. ${j.nome}` }), h('b', { textContent: j.pts }))));
 
   // ---------- Quiz em texto: blocos separados por linha em branco; "*" marca a certa ----------
   function parse(txt) {
@@ -59,6 +59,7 @@
   function hospedar(quiz, seg) {
     const jog = new Map(); // id do peer -> { nome, pts, r, g, c }
     let i = -1, t0 = 0, timer = null, fase = 'lobby', codigo = '';
+    const pid = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
     const todos = (m) => jog.forEach(j => j.c.open && j.c.send(m));
     const rank = () => [...jog.values()].sort((a, b) => b.pts - a.pts);
     const cod = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
@@ -72,7 +73,7 @@
           if (!m || typeof m !== 'object') return;
           if (m.t === 'entrar') {
             if (fase !== 'lobby') return c.send({ t: 'fechada' });
-            jog.set(c.peer, { nome: String(m.nome || '').trim().slice(0, 20) || 'Anônimo', pts: 0, r: null, g: 0, c });
+            jog.set(c.peer, { nome: String(m.nome || '').trim().slice(0, 20) || 'Anônimo', tk: typeof m.tk === 'string' && m.tk.length <= 300 ? m.tk : '', pts: 0, r: null, g: 0, c });
             c.send({ t: 'ok' }); if (fase === 'lobby') lobby();
           } else if (m.t === 'resp' && fase === 'pergunta' && m.i === i) {
             const j = jog.get(c.peer);
@@ -117,13 +118,26 @@
     function fim() {
       fase = 'fim'; const rk = rank(), top = rk.slice(0, 5).map(j => ({ nome: j.nome, pts: j.pts }));
       jog.forEach(j => j.c.open && j.c.send({ t: 'fim', top, pts: j.pts, pos: rk.indexOf(j) + 1, de: rk.length }));
-      tela(h('h2', { textContent: 'Resultado final' }), lista(rk, 10), h('button', { class: 'grande', textContent: 'Fechar', onclick: () => { fechar(); document.getElementById('jogo').hidden = true; } }));
+      const jogadores = rk.map((j, n) => ({ tk: j.tk, pontos: j.pts, pos: n + 1 })).filter((j) => j.tk);
+      const estado = h('p', { class: 'msg', role: 'status' });
+      const tentar = h('button', { class: 'sec', textContent: 'Tentar salvar de novo', hidden: true, onclick: () => salvar() });
+      async function salvar() {
+        if (!jogadores.length) { estado.textContent = 'Nenhum aluno com conta nesta partida.'; return; }
+        estado.textContent = 'Salvando a pontuação dos alunos com conta…'; tentar.hidden = true;
+        try {
+          const d = await Api.partida({ pid, sala: codigo, perguntas: quiz.length, total: rk.length, jogadores });
+          estado.textContent = d.ja_registrada ? 'Pontuação já estava salva. ✓' : `Pontuação salva para ${d.creditados} aluno(s) com conta. ✓`;
+        } catch (e) { estado.textContent = 'Não foi possível salvar a pontuação (internet ou sessão expirada).'; tentar.hidden = false; }
+      }
+      tela(h('h2', { textContent: 'Resultado final' }), lista(rk, 10), estado, tentar,
+        h('button', { class: 'grande', textContent: 'Fechar', onclick: () => { fechar(); document.getElementById('jogo').hidden = true; } }));
+      salvar();
     }
     abrir();
   }
 
   // ---------- Jogador (aluno) ----------
-  function entrar(codigo, nome) {
+  function entrar(codigo, nome, ficha) {
     codigo = (codigo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!codigo) return;
     fechar(); tela(h('h2', { textContent: 'Conectando…' }));
@@ -133,7 +147,7 @@
     peer.on('error', () => !ok && falha());
     peer.on('open', () => {
       conn = peer.connect('pontuo-' + codigo, { reliable: true });
-      conn.on('open', () => conn.send({ t: 'entrar', nome }));
+      conn.on('open', () => conn.send({ t: 'entrar', nome, tk: ficha || undefined }));
       conn.on('close', () => tela(h('h2', { textContent: 'A sala foi encerrada.' })));
       conn.on('data', (m) => {
         if (!m || typeof m !== 'object') return;
@@ -147,6 +161,7 @@
           tela(h('h2', { class: m.ok ? 'acerto' : 'erro', textContent: m.ok ? 'Acertou! 🎉' : 'Errou…' }), h('p', { textContent: `+${m.g} pontos · total ${m.pts}` }),
             h('p', { textContent: `Você está em ${m.pos}º de ${m.de}` }));
         } else if (m.t === 'fim') {
+          [4000, 12000].forEach((ms) => setTimeout(() => window.dispatchEvent(new Event('pontuo:atualizar')), ms));
           tela(h('h2', { textContent: `Você terminou em ${m.pos}º lugar!` }), h('p', { textContent: `${m.pts} pontos` }), h('h3', { textContent: 'Top 5' }), lista(m.top));
         }
       });
