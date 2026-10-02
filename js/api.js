@@ -31,6 +31,12 @@ const Api = (() => {
       try { return (await post('verificar.php', { token: s.token })).valido === true; } catch (e) { return false; }
     },
     sair() { prof.apagar(); },
+    async partida(corpo) {
+      const s = prof.ler();
+      if (!s) throw new Error('sem_sessao');
+      return post('partida_registrar.php', { ...corpo, token: s.token });
+    },
+    ranking() { return post('ranking.php', {}); },
 
     aluno: {
       async cadastrar(apelido, pin) {
@@ -47,7 +53,11 @@ const Api = (() => {
         try { return (await post('aluno_perfil.php', { token: s.token })).aluno; }
         catch (e) { if (e.message === 'token_invalido') alu.apagar(); return null; }
       },
-      token() { const s = alu.ler(); return s ? s.token : null; },
+      async ficha() {
+        const s = alu.ler();
+        if (!s) return null;
+        try { return (await post('aluno_ficha.php', { token: s.token })).ficha; } catch (e) { return null; }
+      },
       sair() { alu.apagar(); },
     },
   };
