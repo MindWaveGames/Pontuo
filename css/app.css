@@ -104,3 +104,29 @@ dialog .sec{background:var(--branco)}
 .hist{font-size:.9rem}
 .hist li,.rk li{background:#ffffff1f;border-radius:10px;padding:8px 12px;margin-bottom:6px}
 .rk li{display:flex;justify-content:space-between;gap:8px}
+
+/* Biblioteca e editor de quizzes */
+.biblio{display:grid;gap:12px;margin:16px 0}
+.bq{background:var(--roxo-claro);border:3px solid var(--marinho);border-radius:16px;padding:12px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.bq strong{font-family:var(--fonte-titulo);font-size:1.1rem;margin-right:auto;overflow-wrap:anywhere}
+.mini{min-height:40px;padding:6px 12px!important;font-size:.9rem}
+.sec.perigo{background:var(--coral)}
+.edtopo{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:16px 0 4px}
+.edtopo input{flex:1 1 220px;font-weight:700}
+.edtopo select,.qcab select{padding:8px;border-radius:10px;border:3px solid var(--marinho);color:var(--marinho);background:#fff;min-height:40px}
+.status{opacity:.85}
+.qcard{background:var(--roxo-claro);border:3px solid var(--marinho);border-radius:16px;padding:12px;margin:14px 0}
+.qcard.invalida{outline:4px solid var(--coral)}
+.qcab{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
+.qcab strong{margin-right:auto;font-family:var(--fonte-titulo)}
+.qcard textarea,.trocar textarea{width:100%;border-radius:12px;border:3px solid var(--marinho);padding:10px;font:inherit;color:var(--marinho);resize:vertical}
+.alt{display:flex;align-items:center;gap:8px;margin-top:8px}
+.alt b{flex:none;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--marinho);border:2px solid var(--marinho)}
+.a0 b{background:#ff5c5c}.a1 b{background:#4db3ff}.a2 b{background:var(--amarelo)}.a3 b{background:#3ddc84}
+.alt input[type=text]{flex:1;min-width:0}
+.marca{display:flex;align-items:center;gap:4px;font-size:.85rem;flex:none}
+.marca input{width:24px;height:24px;accent-color:var(--amarelo)}
+.trocar{margin:16px 0}
+.trocar summary{cursor:pointer;font-weight:700;padding:8px 0}
+.trocar form{max-width:360px}
+@media(max-width:560px){.qcab strong{width:100%}.mini{flex:1 1 auto}}
