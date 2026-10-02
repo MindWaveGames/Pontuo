@@ -18,7 +18,7 @@
 .barra{height:10px;background:#ffffff33;border-radius:999px;overflow:hidden}
 .barra i{display:block;height:100%;background:var(--amarelo);animation:enc linear forwards}
 @keyframes enc{from{width:100%}to{width:0}}
-.rk{list-style:decimal inside;padding:0;margin:8px auto 20px;max-width:420px;text-align:left}
+.rk{list-style:none;padding:0;margin:8px auto 20px;max-width:420px;text-align:left}
 .rk li{display:flex;justify-content:space-between;background:#ffffff1f;border-radius:10px;padding:8px 12px;margin-bottom:6px}
 .acerto{color:#3ddc84}.erro{color:#ff8a8a}
 .acoes select{padding:12px;border-radius:12px;border:3px solid var(--marinho);font-size:1rem}
