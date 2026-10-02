@@ -22,7 +22,7 @@ function render() {
   $('#btn-sair').hidden = !on;
   if (on && !$('#quizz-ok').dataset.pronto) {
     $('#quizz-ok').dataset.pronto = 1;
-    carregarJogo().then(J => J.editor($('#quizz-ok'))).catch(() => { $('#quizz-ok').textContent = 'Não foi possível carregar o criador de quizz.'; });
+    carregarJogo().then(async (J) => { await carregarEditor(); Editor.montar($('#quizz-ok'), J.abrirSala); }).catch(() => { $('#quizz-ok').textContent = 'Não foi possível carregar o criador de quizz.'; });
   }
 }
 
@@ -69,6 +69,7 @@ const carregar = (tag, attrs) => new Promise((ok, no) => {
 const carregarJogo = () => _jogo || (_jogo = Promise.all([
   carregar('link', { rel: 'stylesheet', href: 'css/jogo.css' }),
   carregar('script', { src: 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js' }),
+  carregar('script', { src: 'js/vendor/qrcode.js' }),
 ]).then(() => carregar('script', { src: 'js/jogo.js' })).then(() => window.Jogo));
 
 $('#f-sala').addEventListener('submit', async (e) => {
@@ -121,6 +122,9 @@ async function carregarRanking() {
     lista(cols[1], d.alunos, (a) => [a.apelido, `${a.pontos} pts`], 'Apenas alunos cadastrados aparecem aqui.');
   } catch (e) { /* mantém o texto anterior se a API estiver fora do ar */ }
 }
+
+let _editor;
+const carregarEditor = () => _editor || (_editor = carregar('script', { src: 'js/editor.js' }));
 
 let _conta;
 async function montarConta() {
