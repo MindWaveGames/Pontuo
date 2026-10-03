@@ -13,21 +13,22 @@
   };
   const LOCAL = 'pontuo_quizzes'; // formato antigo (salvo só no navegador), importável uma vez
   const MAXQ = 100, LET = ['A', 'B', 'C', 'D'], TEMPOS = [10, 15, 20, 30, 45, 60];
-  let cache = [], max = 5;
+  let cache = [], max = 5, maxKids = 3;
 
   const novoId = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(36).padStart(2, '0')).join('');
   const vazia = () => ({ q: '', op: ['', '', '', ''], c: 0, seg: 0 });
-  const novoQuiz = () => ({ qid: novoId(), titulo: 'Novo quizz', seg: 20, perguntas: [vazia()] });
+  const novoQuiz = () => ({ qid: novoId(), tipo: 'normal', titulo: 'Novo quizz', seg: 20, perguntas: [vazia()] });
   const MSG = {
-    limite_quizzes: () => `Você já tem ${max} quizzes salvos. Exclua um para criar outro.`,
+    limite_quizzes: () => `Você atingiu o limite deste tipo de quizz (${max} normais e ${maxKids} Kids). Exclua um para criar outro.`,
     token_invalido: () => 'Sua sessão expirou. Entre com a chave novamente.',
   };
   const erroTexto = (e) => (MSG[e.message] ? MSG[e.message]() : 'Sem conexão com o servidor. Tente novamente.');
 
   // Aceita só o formato esperado e limita tamanhos (vale para arquivo importado).
   function normalizar(o) {
+    if (o && o.tipo === 'kids' && window.Kids) return Kids.normalizar(o);
     const src = o && typeof o === 'object' ? o : {};
-    const z = { qid: novoId(), titulo: String(src.titulo || 'Quizz importado').slice(0, 60), seg: TEMPOS.includes(+src.seg) ? +src.seg : 20, perguntas: [] };
+    const z = { qid: novoId(), tipo: 'normal', titulo: String(src.titulo || 'Quizz importado').slice(0, 60), seg: TEMPOS.includes(+src.seg) ? +src.seg : 20, perguntas: [] };
     for (const p of (Array.isArray(src.perguntas) ? src.perguntas : []).slice(0, MAXQ)) {
       const x = p && typeof p === 'object' ? p : {};
       z.perguntas.push({
@@ -68,7 +69,7 @@
 
   // ---------- Servidor ----------
   const api = (acao, extra) => Api.professor.quizzes(acao, extra);
-  async function carregarLista() { const d = await api('listar'); cache = d.quizzes || []; max = d.max || 5; }
+  async function carregarLista() { const d = await api('listar'); cache = d.quizzes || []; max = d.max || 5; maxKids = d.max_kids || 3; }
   async function gravar(z) {
     await api('salvar', { quiz: z });
     const i = cache.findIndex((x) => x.qid === z.qid);
@@ -82,23 +83,34 @@
     carregarLista().then(biblioteca).catch((e) => el.replaceChildren(h('p', { class: 'msg', textContent: erroTexto(e) }),
       h('button', { class: 'sec', textContent: 'Tentar de novo', onclick: () => montar(el, abrirSala) })));
 
+    // Abre a sala (normal) ou o jogo conduzido pelo professor (Kids). Devolve um texto de erro, ou null.
+    const iniciar = async (z) => {
+      if (z.tipo !== 'kids') return abrirSala(paraJogo(z), z.seg);
+      if (!(await Api.valida())) return MSG.token_invalido();
+      Kids.jogar(z); return null;
+    };
+
     // ---------- Biblioteca ----------
     function biblioteca() {
-      const msg = h('p', { class: 'msg', role: 'status' }), cheio = cache.length >= max, antigos = legados();
+      const msg = h('p', { class: 'msg', role: 'status' });
+      const normais = cache.filter((z) => z.tipo !== 'kids'), kids = cache.filter((z) => z.tipo === 'kids');
+      const cheioN = normais.length >= max, cheioK = kids.length >= maxKids, antigos = legados();
+      const cheioDe = (z) => (z.tipo === 'kids' ? cheioK : cheioN);
       const arq = h('input', { type: 'file', accept: '.json,application/json', hidden: true, onchange: async () => {
         const f = arq.files[0]; if (!f) return;
         try {
           if (f.size > 500000) throw new Error('grande');
           const z = normalizar(JSON.parse(await f.text()));
           if (!z.perguntas.length) throw new Error('vazio');
+          if (cheioDe(z)) throw new Error('limite_quizzes');
           await gravar(z); biblioteca();
         } catch (e) { msg.textContent = e.message === 'limite_quizzes' ? MSG.limite_quizzes() : 'Arquivo inválido. Use um arquivo exportado pelo Pontuô.'; }
       } });
       const jogar = async (z) => {
-        const pr = problema(z);
+        const pr = z.tipo === 'kids' ? Kids.problema(z) : problema(z);
         if (pr) { msg.textContent = `"${z.titulo}" — ${pr.msg} Abra para editar.`; return; }
         msg.textContent = 'Verificando licença…';
-        const erro = await abrirSala(paraJogo(z), z.seg); msg.textContent = erro || '';
+        msg.textContent = (await iniciar(z)) || '';
       };
       const duplicar = async (z) => {
         const c = JSON.parse(JSON.stringify(z)); c.qid = novoId(); c.titulo = (z.titulo + ' (cópia)').slice(0, 60);
@@ -112,25 +124,26 @@
         msg.textContent = 'Importando…';
         let n = 0;
         for (const q of antigos) {
-          if (cache.length >= max) break;
+          if (cache.filter((x) => x.tipo !== 'kids').length >= max) break;
           const z = normalizar({ titulo: q.titulo, seg: q.seg, perguntas: q.perguntas });
           if (!z.perguntas.length) continue;
           try { await gravar(z); n++; } catch (e) { break; }
         }
-        if (n === antigos.length || cache.length >= max) { try { localStorage.removeItem(LOCAL); } catch (e) {} }
+        if (n === antigos.length || cache.filter((x) => x.tipo !== 'kids').length >= max) { try { localStorage.removeItem(LOCAL); } catch (e) {} }
         biblioteca();
       };
       el.replaceChildren(
-        h('p', { class: 'vazio', textContent: `Seus quizzes salvos: ${cache.length} de ${max}. Eles ficam na sua conta e aparecem em qualquer computador.` }),
+        h('p', { class: 'vazio', textContent: `Quizzes: ${normais.length} de ${max} · Kids 🧸: ${kids.length} de ${maxKids}. Ficam salvos na sua conta e aparecem em qualquer computador.` }),
         h('div', { class: 'acoes' },
-          h('button', { class: 'grande', textContent: 'Novo quizz', disabled: cheio, onclick: () => editar(novoQuiz(), true) }),
-          h('button', { class: 'sec', textContent: 'Importar arquivo', disabled: cheio, onclick: () => arq.click() }), arq),
-        antigos.length && !cheio ? h('div', { class: 'acoes' }, h('button', { class: 'sec', textContent: `Importar ${antigos.length} quizz(es) que estavam salvos neste navegador`, onclick: importarAntigos })) : '',
+          h('button', { class: 'grande', textContent: 'Novo quizz', disabled: cheioN, onclick: () => editar(novoQuiz(), true) }),
+          h('button', { class: 'grande kids-btn', textContent: '🧸 Nova atividade Kids', disabled: cheioK, onclick: () => editar(Kids.novoQuiz(), true) }),
+          h('button', { class: 'sec', textContent: 'Importar arquivo', disabled: cheioN && cheioK, onclick: () => arq.click() }), arq),
+        antigos.length && !cheioN ? h('div', { class: 'acoes' }, h('button', { class: 'sec', textContent: `Importar ${antigos.length} quizz(es) que estavam salvos neste navegador`, onclick: importarAntigos })) : '',
         cache.length ? h('div', { class: 'biblio' }, ...cache.map((z) => h('div', { class: 'bq' },
-          h('strong', { textContent: z.titulo }), h('small', { textContent: `${z.perguntas.length} pergunta(s)` }),
+          h('strong', { textContent: (z.tipo === 'kids' ? '🧸 ' : '') + z.titulo }), h('small', { textContent: `${z.perguntas.length} pergunta(s)` }),
           h('button', { class: 'sec mini', textContent: 'Jogar', onclick: () => jogar(z) }),
           h('button', { class: 'sec mini', textContent: 'Editar', onclick: () => editar(z, false) }),
-          h('button', { class: 'sec mini', textContent: 'Duplicar', disabled: cheio, onclick: () => duplicar(z) }),
+          h('button', { class: 'sec mini', textContent: 'Duplicar', disabled: cheioDe(z), onclick: () => duplicar(z) }),
           h('button', { class: 'sec mini perigo', textContent: 'Excluir', onclick: () => apagar(z) }))))
           : h('p', { class: 'vazio', textContent: 'Você ainda não tem quizzes. Crie o primeiro!' }),
         msg);
@@ -138,6 +151,7 @@
 
     // ---------- Editor de um quizz ----------
     function editar(z, novo) {
+      if (z.tipo === 'kids') return Kids.editar(el, z, { gravar, voltar: biblioteca, jogar: iniciar, erroTexto, novo });
       let t = null;
       const status = h('small', { class: 'status', role: 'status' }), msg = h('p', { class: 'msg', role: 'status' });
       const salvarJa = async () => {
