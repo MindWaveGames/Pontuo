@@ -48,7 +48,11 @@
 
   // ---------- QR code (biblioteca local js/vendor/qrcode.js) ----------
   function qrSvg(texto) {
-    if (typeof qrcode !== 'function') return h('span');
+    const indisponivel = h('p', { class: 'vazio', textContent: 'QR code indisponível agora: passe o código ou o link aos alunos.' });
+    if (typeof qrcode !== 'function') { console.warn('QR: biblioteca js/vendor/qrcode.js não carregou'); return indisponivel; }
+    try { return desenharQr(texto); } catch (e) { console.warn('QR:', e); return indisponivel; }
+  }
+  function desenharQr(texto) {
     const q = qrcode(0, 'M'); q.addData(texto); q.make();
     const n = q.getModuleCount(), m = 4, tam = n + 2 * m, ns = 'http://www.w3.org/2000/svg';
     let d = '';
