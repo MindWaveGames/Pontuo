@@ -1,4 +1,4 @@
-// Editor visual de quizzes: biblioteca + perguntas. Tudo fica salvo só no navegador do professor.
+// Editor visual de quizzes. Os quizzes ficam salvos NA CONTA do professor (servidor): até 5, em qualquer computador.
 (() => {
   const h = (tag, p = {}, ...kids) => {
     const e = document.createElement(tag);
@@ -11,17 +11,23 @@
     e.append(...kids);
     return e;
   };
-  const KEY = 'pontuo_quizzes', MAXQ = 100, LET = ['A', 'B', 'C', 'D'], TEMPOS = [10, 15, 20, 30, 45, 60];
-  const ler = () => { try { const l = JSON.parse(localStorage.getItem(KEY)); return Array.isArray(l) ? l : []; } catch (e) { return []; } };
-  const gravar = (l) => { try { localStorage.setItem(KEY, JSON.stringify(l)); return true; } catch (e) { return false; } };
-  const novoId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const LOCAL = 'pontuo_quizzes'; // formato antigo (salvo só no navegador), importável uma vez
+  const MAXQ = 100, LET = ['A', 'B', 'C', 'D'], TEMPOS = [10, 15, 20, 30, 45, 60];
+  let cache = [], max = 5;
+
+  const novoId = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(36).padStart(2, '0')).join('');
   const vazia = () => ({ q: '', op: ['', '', '', ''], c: 0, seg: 0 });
-  const novoQuiz = () => ({ id: novoId(), titulo: 'Novo quizz', seg: 20, perguntas: [vazia()] });
+  const novoQuiz = () => ({ qid: novoId(), titulo: 'Novo quizz', seg: 20, perguntas: [vazia()] });
+  const MSG = {
+    limite_quizzes: () => `Você já tem ${max} quizzes salvos. Exclua um para criar outro.`,
+    token_invalido: () => 'Sua sessão expirou. Entre com a chave novamente.',
+  };
+  const erroTexto = (e) => (MSG[e.message] ? MSG[e.message]() : 'Sem conexão com o servidor. Tente novamente.');
 
   // Aceita só o formato esperado e limita tamanhos (vale para arquivo importado).
   function normalizar(o) {
     const src = o && typeof o === 'object' ? o : {};
-    const z = { id: novoId(), titulo: String(src.titulo || 'Quizz importado').slice(0, 60), seg: TEMPOS.includes(+src.seg) ? +src.seg : 20, perguntas: [] };
+    const z = { qid: novoId(), titulo: String(src.titulo || 'Quizz importado').slice(0, 60), seg: TEMPOS.includes(+src.seg) ? +src.seg : 20, perguntas: [] };
     for (const p of (Array.isArray(src.perguntas) ? src.perguntas : []).slice(0, MAXQ)) {
       const x = p && typeof p === 'object' ? p : {};
       z.perguntas.push({
@@ -39,8 +45,7 @@
     return txt.split(/\n\s*\n/).map((b) => b.split('\n').map((l) => l.trim()).filter(Boolean)).filter((l) => l.length >= 3).map((l) => {
       const [q, ...r] = l, o = r.slice(0, 4), c = o.findIndex((x) => x.startsWith('*'));
       if (c < 0) return null;
-      const op = [0, 1, 2, 3].map((i) => (o[i] || '').replace(/^\*/, '').trim().slice(0, 80));
-      return { q: q.slice(0, 200), op, c, seg: 0 };
+      return { q: q.slice(0, 200), op: [0, 1, 2, 3].map((i) => (o[i] || '').replace(/^\*/, '').trim().slice(0, 80)), c, seg: 0 };
     }).filter(Boolean);
   }
 
@@ -61,18 +66,33 @@
     return { q: p.q.trim(), op: idx.map((i) => p.op[i].trim()), c: idx.indexOf(p.c), seg: p.seg || 0 };
   });
 
+  // ---------- Servidor ----------
+  const api = (acao, extra) => Api.professor.quizzes(acao, extra);
+  async function carregarLista() { const d = await api('listar'); cache = d.quizzes || []; max = d.max || 5; }
+  async function gravar(z) {
+    await api('salvar', { quiz: z });
+    const i = cache.findIndex((x) => x.qid === z.qid);
+    if (i >= 0) cache[i] = z; else cache.unshift(z);
+  }
+  async function excluir(qid) { await api('excluir', { qid }); cache = cache.filter((x) => x.qid !== qid); }
+  const legados = () => { try { const l = JSON.parse(localStorage.getItem(LOCAL)); return Array.isArray(l) ? l : []; } catch (e) { return []; } };
+
   function montar(el, abrirSala) {
+    el.replaceChildren(h('p', { class: 'vazio', textContent: 'Carregando seus quizzes…' }));
+    carregarLista().then(biblioteca).catch((e) => el.replaceChildren(h('p', { class: 'msg', textContent: erroTexto(e) }),
+      h('button', { class: 'sec', textContent: 'Tentar de novo', onclick: () => montar(el, abrirSala) })));
+
     // ---------- Biblioteca ----------
     function biblioteca() {
-      const qs = ler(), msg = h('p', { class: 'msg', role: 'status' });
+      const msg = h('p', { class: 'msg', role: 'status' }), cheio = cache.length >= max, antigos = legados();
       const arq = h('input', { type: 'file', accept: '.json,application/json', hidden: true, onchange: async () => {
         const f = arq.files[0]; if (!f) return;
         try {
           if (f.size > 500000) throw new Error('grande');
           const z = normalizar(JSON.parse(await f.text()));
           if (!z.perguntas.length) throw new Error('vazio');
-          const l = ler(); l.unshift(z); gravar(l); biblioteca();
-        } catch (e) { msg.textContent = 'Arquivo inválido. Use um arquivo exportado pelo Pontuô.'; }
+          await gravar(z); biblioteca();
+        } catch (e) { msg.textContent = e.message === 'limite_quizzes' ? MSG.limite_quizzes() : 'Arquivo inválido. Use um arquivo exportado pelo Pontuô.'; }
       } });
       const jogar = async (z) => {
         const pr = problema(z);
@@ -80,31 +100,52 @@
         msg.textContent = 'Verificando licença…';
         const erro = await abrirSala(paraJogo(z), z.seg); msg.textContent = erro || '';
       };
+      const duplicar = async (z) => {
+        const c = JSON.parse(JSON.stringify(z)); c.qid = novoId(); c.titulo = (z.titulo + ' (cópia)').slice(0, 60);
+        try { await gravar(c); biblioteca(); } catch (e) { msg.textContent = erroTexto(e); }
+      };
+      const apagar = async (z) => {
+        if (!confirm(`Excluir "${z.titulo}"?`)) return;
+        try { await excluir(z.qid); biblioteca(); } catch (e) { msg.textContent = erroTexto(e); }
+      };
+      const importarAntigos = async () => {
+        msg.textContent = 'Importando…';
+        let n = 0;
+        for (const q of antigos) {
+          if (cache.length >= max) break;
+          const z = normalizar({ titulo: q.titulo, seg: q.seg, perguntas: q.perguntas });
+          if (!z.perguntas.length) continue;
+          try { await gravar(z); n++; } catch (e) { break; }
+        }
+        if (n === antigos.length || cache.length >= max) { try { localStorage.removeItem(LOCAL); } catch (e) {} }
+        biblioteca();
+      };
       el.replaceChildren(
+        h('p', { class: 'vazio', textContent: `Seus quizzes salvos: ${cache.length} de ${max}. Eles ficam na sua conta e aparecem em qualquer computador.` }),
         h('div', { class: 'acoes' },
-          h('button', { class: 'grande', textContent: 'Novo quizz', onclick: () => editar(novoQuiz()) }),
-          h('button', { class: 'sec', textContent: 'Importar arquivo', onclick: () => arq.click() }), arq),
-        qs.length ? h('div', { class: 'biblio' }, ...qs.map((z) => h('div', { class: 'bq' },
+          h('button', { class: 'grande', textContent: 'Novo quizz', disabled: cheio, onclick: () => editar(novoQuiz(), true) }),
+          h('button', { class: 'sec', textContent: 'Importar arquivo', disabled: cheio, onclick: () => arq.click() }), arq),
+        antigos.length && !cheio ? h('div', { class: 'acoes' }, h('button', { class: 'sec', textContent: `Importar ${antigos.length} quizz(es) que estavam salvos neste navegador`, onclick: importarAntigos })) : '',
+        cache.length ? h('div', { class: 'biblio' }, ...cache.map((z) => h('div', { class: 'bq' },
           h('strong', { textContent: z.titulo }), h('small', { textContent: `${z.perguntas.length} pergunta(s)` }),
           h('button', { class: 'sec mini', textContent: 'Jogar', onclick: () => jogar(z) }),
-          h('button', { class: 'sec mini', textContent: 'Editar', onclick: () => editar(z) }),
-          h('button', { class: 'sec mini', textContent: 'Duplicar', onclick: () => { const c = JSON.parse(JSON.stringify(z)); c.id = novoId(); c.titulo = (z.titulo + ' (cópia)').slice(0, 60); const l = ler(); l.unshift(c); gravar(l); biblioteca(); } }),
-          h('button', { class: 'sec mini perigo', textContent: 'Excluir', onclick: () => { if (confirm(`Excluir "${z.titulo}"?`)) { gravar(ler().filter((x) => x.id !== z.id)); biblioteca(); } } }))))
+          h('button', { class: 'sec mini', textContent: 'Editar', onclick: () => editar(z, false) }),
+          h('button', { class: 'sec mini', textContent: 'Duplicar', disabled: cheio, onclick: () => duplicar(z) }),
+          h('button', { class: 'sec mini perigo', textContent: 'Excluir', onclick: () => apagar(z) }))))
           : h('p', { class: 'vazio', textContent: 'Você ainda não tem quizzes. Crie o primeiro!' }),
         msg);
     }
 
     // ---------- Editor de um quizz ----------
-    function editar(z) {
+    function editar(z, novo) {
       let t = null;
       const status = h('small', { class: 'status', role: 'status' }), msg = h('p', { class: 'msg', role: 'status' });
-      const salvarJa = () => {
-        clearTimeout(t);
-        const l = ler(), i = l.findIndex((x) => x.id === z.id);
-        if (i >= 0) l[i] = z; else l.unshift(z);
-        status.textContent = gravar(l) ? 'Salvo ✓' : 'Não foi possível salvar neste navegador.';
+      const salvarJa = async () => {
+        clearTimeout(t); status.textContent = 'Salvando…';
+        try { await gravar(z); status.textContent = 'Salvo ✓'; return true; }
+        catch (e) { status.textContent = erroTexto(e); return false; }
       };
-      const salvar = () => { status.textContent = 'Salvando…'; clearTimeout(t); t = setTimeout(salvarJa, 400); };
+      const salvar = () => { status.textContent = 'Alterações pendentes…'; clearTimeout(t); t = setTimeout(salvarJa, 1200); };
       const lista = h('div', { class: 'perguntas' });
 
       const tempoSel = (valor, aoMudar, padrao) => h('select', { onchange: (e) => aoMudar(+e.target.value) },
@@ -154,7 +195,8 @@
           h('button', { class: 'grande', type: 'button', textContent: 'Jogar', onclick: async () => {
             const pr = problema(z);
             if (pr) { msg.textContent = pr.msg; const c = pr.k >= 0 && document.getElementById('q' + pr.k); if (c) { c.classList.add('invalida'); c.scrollIntoView({ block: 'center' }); setTimeout(() => c.classList.remove('invalida'), 2500); } return; }
-            salvarJa(); msg.textContent = 'Verificando licença…';
+            msg.textContent = 'Salvando e verificando licença…';
+            if (!(await salvarJa())) { msg.textContent = 'Não foi possível salvar o quizz. Verifique a internet.'; return; }
             const erro = await abrirSala(paraJogo(z), z.seg); msg.textContent = erro || '';
           } }),
           h('button', { class: 'sec', type: 'button', textContent: 'Exportar arquivo', onclick: () => {
@@ -162,13 +204,11 @@
             const a = h('a', { href: URL.createObjectURL(blob), download: (z.titulo || 'quizz').replace(/[^\w-]+/g, '_') + '.json' });
             document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
           } }),
-          h('button', { class: 'sec', type: 'button', textContent: 'Voltar', onclick: () => { salvarJa(); biblioteca(); } })),
+          h('button', { class: 'sec', type: 'button', textContent: 'Voltar', onclick: async () => { await salvarJa(); biblioteca(); } })),
         msg);
       desenhar();
-      if (!ler().some((x) => x.id === z.id)) salvarJa();
+      if (novo) salvarJa(); // reserva a vaga já na criação
     }
-
-    biblioteca();
   }
 
   window.Editor = { montar, _teste: { normalizar, deTexto, problema, paraJogo } };
