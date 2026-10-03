@@ -18,10 +18,17 @@ let aluno = null; // aluno logado: { apelido, avatar, nivel, pontos, de, ate, hi
 const PROF_BASE = { avatar: null, nivel: 1, pontos: 0, de: 0, ate: 5000, partidas: 0, jogadores: 0 };
 
 // ---------- Carregamento sob demanda ----------
+// Suba este número a cada atualização do site: força o navegador a baixar os arquivos novos (sem depender de Ctrl+F5).
+const VERSAO = '4';
+const comVersao = (u) => (u && !/^https?:/.test(u) ? `${u}?v=${VERSAO}` : u);
 const carregar = (tag, attrs) => new Promise((ok, no) => {
-  const e = Object.assign(document.createElement(tag), attrs);
+  const real = { ...attrs };
+  if (real.src) real.src = comVersao(real.src);
+  if (real.href) real.href = comVersao(real.href);
+  const e = Object.assign(document.createElement(tag), real);
   e.onload = ok; e.onerror = () => no(new Error('arquivo não encontrado: ' + (attrs.src || attrs.href))); document.head.append(e);
 });
+console.info('Pontuô front, versão', VERSAO);
 let _av, _jogo, _editor, _conta;
 const carregarAvatares = () => _av || (_av = carregar('script', { src: 'js/avatares.js' }));
 const carregarJogo = () => _jogo || (_jogo = Promise.all([
