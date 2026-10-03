@@ -26,3 +26,9 @@
 @media(max-width:560px){.ops{grid-template-columns:1fr}.jogo-in{padding-top:64px}}
 @media(prefers-reduced-motion:reduce){.barra i{animation:none}}
 .qr{display:block;width:min(260px,70vw);height:auto;margin:14px auto;border:4px solid var(--marinho);border-radius:16px;background:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;background:#ffffff26;border-radius:999px;padding:4px 12px 4px 4px}
+.chip.off{opacity:.45}
+.nomes span.chip{padding:4px 12px 4px 4px}
+.rede{position:fixed;top:12px;left:12px;right:96px;z-index:11;background:var(--amarelo);color:var(--marinho);border:3px solid var(--marinho);border-radius:12px;padding:8px 12px;font-weight:700}
+.rede[hidden]{display:none}
+.rk .nm{display:flex;align-items:center;gap:10px;min-width:0}
