@@ -27,7 +27,7 @@ const carregarAvatares = () => _av || (_av = carregar('script', { src: 'js/avata
 const carregarJogo = () => _jogo || (_jogo = Promise.all([
   carregar('link', { rel: 'stylesheet', href: 'css/jogo.css' }),
   carregar('script', { src: 'js/vendor/peerjs.min.js' }),   // local: redes de escola costumam bloquear CDNs
-  carregar('script', { src: 'js/vendor/qrcode.js' }).catch(() => {}), // o QR é opcional: sem ele a sala abre igual
+  carregar('script', { src: 'js/vendor/qrcode.js' }).catch((e) => console.warn('QR code indisponível:', e.message)), // opcional: sem ele a sala abre igual
 ]).then(() => carregar('script', { src: 'js/jogo.js' })).then(() => window.Jogo));
 const carregarEditor = () => _editor || (_editor = carregar('script', { src: 'js/editor.js' }));
 
