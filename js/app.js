@@ -19,7 +19,7 @@ const PROF_BASE = { avatar: null, nivel: 1, pontos: 0, de: 0, ate: 5000, partida
 
 // ---------- Carregamento sob demanda ----------
 // Suba este número a cada atualização do site: força o navegador a baixar os arquivos novos (sem depender de Ctrl+F5).
-const VERSAO = '4';
+const VERSAO = '6';
 const comVersao = (u) => (u && !/^https?:/.test(u) ? `${u}?v=${VERSAO}` : u);
 const carregar = (tag, attrs) => new Promise((ok, no) => {
   const real = { ...attrs };
@@ -30,13 +30,19 @@ const carregar = (tag, attrs) => new Promise((ok, no) => {
 });
 console.info('Pontuô front, versão', VERSAO);
 let _av, _jogo, _editor, _conta;
-const carregarAvatares = () => _av || (_av = carregar('script', { src: 'js/avatares.js' }));
+const carregarAvatares = () => _av || (_av = carregar('script', { src: 'js/avatares.js' }).then(() => carregar('script', { src: 'js/podio.js' }))
+  .then(() => carregar('script', { src: 'js/som.js' }).catch((e) => console.warn('Som indisponível:', e.message))));
 const carregarJogo = () => _jogo || (_jogo = Promise.all([
   carregar('link', { rel: 'stylesheet', href: 'css/jogo.css' }),
   carregar('script', { src: 'js/vendor/peerjs.min.js' }),   // local: redes de escola costumam bloquear CDNs
   carregar('script', { src: 'js/vendor/qrcode.js' }).catch((e) => console.warn('QR code indisponível:', e.message)), // opcional: sem ele a sala abre igual
 ]).then(() => carregar('script', { src: 'js/jogo.js' })).then(() => window.Jogo));
-const carregarEditor = () => _editor || (_editor = carregar('script', { src: 'js/editor.js' }));
+const carregarEditor = () => _editor || (_editor = Promise.all([
+  carregar('link', { rel: 'stylesheet', href: 'css/kids.css' }),
+  carregar('script', { src: 'js/pictos.js' }),
+  carregar('script', { src: 'js/kids.js' }),
+  carregar('script', { src: 'js/editor.js' }),
+]));
 
 // ---------- Cartão do usuário e telas ----------
 function pintarAvatar(el, id) {
@@ -162,20 +168,11 @@ function desenharRanking() {
     area.replaceChildren(h('p', { class: 'vazio', textContent: eProf ? 'Nenhum professor pontuou ainda.' : 'Apenas alunos cadastrados aparecem aqui.' }));
     return;
   }
-  const nome = (x) => (eProf ? x.nome : x.apelido), max = Math.max(1, itens[0].pontos);
-  const col = (k) => {
-    const x = itens[k];
-    if (!x) return h('div', { class: 'col vazia' });
-    const alt = Math.max(30, Math.round(x.pontos / max * 140)); // altura proporcional aos pontos
-    return h('div', { class: 'col lugar' + (k + 1) }, Avatar.el(x.avatar, 52), h('strong', { textContent: nome(x) }),
-      h('small', { textContent: `${x.pontos} pts` }), h('div', { class: 'bar', style: `height:${alt}px` }, h('span', { textContent: `${k + 1}º` })));
-  };
-  const podio = h('div', { class: 'podio', role: 'group',
-    'aria-label': 'Top 3: ' + itens.slice(0, 3).map((x, k) => `${k + 1}º ${nome(x)} com ${x.pontos} pontos`).join('; ') }, col(1), col(0), col(2));
-  const resto = itens.slice(3);
-  area.replaceChildren(podio, resto.length ? h('ul', { class: 'rk' }, ...resto.map((x) =>
-    h('li', {}, h('span', { class: 'nm' }, Avatar.el(x.avatar, 34), h('span', { textContent: nome(x) })),
-      h('b', { textContent: eProf ? `${x.pontos} pts · ${x.partidas} sala(s)` : `${x.pontos} pts · nível ${x.nivel}` })))) : '');
+  if (!window.Podio) { area.textContent = 'Não foi possível carregar o ranking (arquivo js/podio.js).'; return; }
+  const lista = itens.map((x) => ({ nome: eProf ? x.nome : x.apelido, pontos: x.pontos, avatar: x.avatar, x }));
+  const resto = lista.slice(3);
+  area.replaceChildren(Podio.criar(lista, { altura: 140 }),
+    resto.length ? Podio.lista(resto, { inicio: 3, valor: (y) => (eProf ? `${y.pontos} pts · ${y.x.partidas} sala(s)` : `${y.pontos} pts · nível ${y.x.nivel}`) }) : '');
 }
 
 // ---------- Eventos ----------
