@@ -32,3 +32,6 @@
 .rede{position:fixed;top:12px;left:12px;right:96px;z-index:11;background:var(--amarelo);color:var(--marinho);border:3px solid var(--marinho);border-radius:12px;padding:8px 12px;font-weight:700}
 .rede[hidden]{display:none}
 .rk .nm{display:flex;align-items:center;gap:10px;min-width:0}
+.jogo .som{position:fixed;top:12px;right:92px;z-index:11;width:52px;min-height:44px;background:#fff;border:3px solid var(--marinho);border-radius:12px;font-size:1.3rem;cursor:pointer}
+.rede{right:160px!important}
+.kids-btn{background:#ff8fab}
