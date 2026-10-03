@@ -1,30 +1,50 @@
-// Jogo ao vivo em P2P (PeerJS). O navegador do professor é o host; o PHP não participa da partida.
+// Jogo ao vivo em P2P (PeerJS). O navegador do professor é o host; o PHP só registra a partida (abertura e fim).
 (() => {
   const h = (tag, p = {}, ...kids) => {
     const e = document.createElement(tag);
     for (const [k, v] of Object.entries(p)) {
       if (k === 'class') e.className = v;
       else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+      else if (k.includes('-')) e.setAttribute(k, v);
       else e[k] = v;
     }
     e.append(...kids);
     return e;
   };
   const LETRAS = ['A', 'B', 'C', 'D'];
-  let peer = null;
-  const fechar = () => { try { peer && peer.destroy(); } catch (e) {} peer = null; };
+  const av = (id, t = 28) => (window.Avatar ? Avatar.el(id, t) : h('span'));
+
+  // ---------- Rede (PeerJS) ----------
+  const limpezas = [];
+  let peer = null, msgRede = '';
+  const ice = () => [
+    { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
+    ...((window.PONTUO && PONTUO.ICE_EXTRA) || []),
+  ];
+  const novoPeer = (id) => new Peer(id, { config: { iceServers: ice(), sdpSemantics: 'unified-plan' } });
+  const rede = (m) => { msgRede = m; const e = document.querySelector('#jogo .rede'); if (e) { e.textContent = m; e.hidden = !m; } };
+  const fechar = () => {
+    limpezas.splice(0).forEach((f) => { try { f(); } catch (e) {} });
+    try { peer && peer.destroy(); } catch (e) {}
+    peer = null; rede('');
+  };
+
+  // ---------- Telas ----------
   const tela = (...n) => {
     let o = document.getElementById('jogo');
     if (!o) { o = h('div', { id: 'jogo', class: 'jogo' }); document.body.append(o); }
     o.hidden = false;
-    const sair = h('button', { class: 'sair', textContent: 'Sair', onclick: () => { fechar(); o.hidden = true; } });
-    o.replaceChildren(sair, h('div', { class: 'jogo-in' }, ...n));
+    o.replaceChildren(
+      h('button', { class: 'sair', textContent: 'Sair', onclick: () => { fechar(); o.hidden = true; } }),
+      h('div', { class: 'rede', role: 'status', hidden: !msgRede, textContent: msgRede }),
+      h('div', { class: 'jogo-in' }, ...n));
   };
   const opcoes = (ops, onclick, extra = {}) => h('div', { class: 'ops' }, ...ops.map((t, i) =>
     h('button', { class: 'op op' + i + (extra.c === i ? ' certa' : ''), disabled: !onclick, onclick: () => onclick && onclick(i) },
       h('b', { textContent: LETRAS[i] }), h('span', { textContent: t }), extra.n ? h('em', { textContent: extra.n[i] }) : '')));
-  const lista = (rk, max = 5) => h('ol', { class: 'rk' }, ...rk.slice(0, max).map((j, n) =>
-    h('li', {}, h('span', { textContent: `${n + 1}. ${j.nome}` }), h('b', { textContent: j.pts }))));
+  const lista = (rk, max = 5) => h('ol', { class: 'rk' }, ...rk.slice(0, max).map((j) =>
+    h('li', {}, h('span', { class: 'nm' }, av(j.av, 30), h('span', { textContent: j.nome })), h('b', { textContent: j.pts }))));
 
   // ---------- QR code (biblioteca local js/vendor/qrcode.js) ----------
   function qrSvg(texto) {
@@ -52,50 +72,122 @@
   // ---------- Host (professor) ----------
   function hospedar(quiz, segPadrao) {
     let seg = segPadrao; // tempo da pergunta atual (cada pergunta pode ter o seu)
-    const jog = new Map(); // id do peer -> { nome, pts, r, g, c }
-    let i = -1, t0 = 0, timer = null, fase = 'lobby', codigo = '';
+    const jog = new Map(); // jid -> { nome, av, tk, pts, r, g, res, fim, c }
+    let i = -1, t0 = 0, timer = null, fase = 'lobby', codigo = '', aberta = false, registrouAbertura = false;
     const pid = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
-    const todos = (m) => jog.forEach(j => j.c.open && j.c.send(m));
-    const rank = () => [...jog.values()].sort((a, b) => b.pts - a.pts);
     const cod = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+    const on = (j) => !!(j.c && j.c.open);
+    const enviar = (j, m) => { try { if (on(j)) j.c.send(m); } catch (e) { console.warn('envio falhou', e); } };
+    const todos = (m) => jog.forEach((j) => enviar(j, m));
+    const rank = () => [...jog.values()].sort((a, b) => b.pts - a.pts);
+    const todosResponderam = () => { const v = [...jog.values()].filter(on); return v.length > 0 && v.every((x) => x.r); };
+    limpezas.push(() => clearTimeout(timer));
+
+    // Estado atual para quem (re)entra: o aluno que caiu volta exatamente para onde estava.
+    const estado = (j) => {
+      if (fase === 'pergunta') {
+        if (j.r) return { t: 'recebida' };
+        const p = quiz[i];
+        return { t: 'pergunta', i, total: quiz.length, q: p.q, op: p.op, seg: Math.max(1, Math.round(seg - (Date.now() - t0) / 1000)) };
+      }
+      if (fase === 'resultado') return j.res || { t: 'ok' };
+      if (fase === 'fim') return j.fim || { t: 'ok' };
+      return { t: 'ok' };
+    };
+    const redesenhar = () => { if (fase === 'lobby') lobby(); else if (fase === 'pergunta') pergunta(); };
+
+    function entrou(c, m) {
+      const jid = typeof m.jid === 'string' && /^[a-z0-9]{8,16}$/.test(m.jid) ? m.jid : null;
+      if (!jid) return;
+      let j = jog.get(jid);
+      if (j) { // reconexão do mesmo aluno
+        if (j.c && j.c !== c) { try { j.c.close(); } catch (e) {} }
+        j.c = c; c._jid = jid; enviar(j, estado(j)); redesenhar(); return;
+      }
+      if (fase !== 'lobby') { try { c.send({ t: 'fechada' }); } catch (e) {} return; }
+      j = {
+        nome: String(m.nome || '').trim().slice(0, 20) || 'Anônimo',
+        av: window.Avatar && Avatar.valido(m.av) ? m.av : '',
+        tk: typeof m.tk === 'string' && m.tk.length <= 300 ? m.tk : '',
+        pts: 0, r: null, g: 0, c,
+      };
+      jog.set(jid, j); c._jid = jid; enviar(j, { t: 'ok' }); lobby();
+    }
 
     function abrir() {
-      fechar(); codigo = cod(); peer = new Peer('pontuo-' + codigo);
-      peer.on('error', (e) => e.type === 'unavailable-id' ? abrir() : tela(h('h2', { textContent: 'Não foi possível abrir a sala.' }), h('p', { textContent: 'Verifique a internet e tente de novo.' })));
-      peer.on('open', lobby);
-      peer.on('connection', (c) => {
+      fechar(); limpezas.push(() => clearTimeout(timer));
+      codigo = cod(); aberta = false;
+      const meu = peer = novoPeer('pontuo-' + codigo);
+      meu.on('open', () => { aberta = true; rede(''); lobby(); registrarAbertura(); });
+      // O servidor de sinalização pode derrubar o host: sem reconectar, ninguém mais consegue entrar.
+      meu.on('disconnected', () => {
+        rede('Reconectando ao servidor da sala…');
+        (function tentar() {
+          if (peer !== meu || meu.destroyed) return;
+          if (!meu.disconnected) { rede(''); return; }
+          try { meu.reconnect(); } catch (e) {}
+          setTimeout(tentar, 3000);
+        })();
+      });
+      meu.on('error', (e) => {
+        if (peer !== meu) return;
+        if (e.type === 'unavailable-id' && !aberta) return abrir();
+        if (!aberta) return tela(h('h2', { textContent: 'Não foi possível abrir a sala.' }), h('p', { textContent: 'Verifique a internet e tente de novo.' }));
+        // Depois de aberta, a falha de UM aluno (webrtc, peer-unavailable...) NÃO pode derrubar a sala.
+        if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(e.type)) rede('Conexão instável. Tentando recuperar…');
+        else console.warn('PeerJS:', e.type, e.message || e);
+      });
+      meu.on('connection', (c) => {
+        c.on('error', (e) => console.warn('conexão de aluno:', e));
         c.on('data', (m) => {
           if (!m || typeof m !== 'object') return;
-          if (m.t === 'entrar') {
-            if (fase !== 'lobby') return c.send({ t: 'fechada' });
-            jog.set(c.peer, { nome: String(m.nome || '').trim().slice(0, 20) || 'Anônimo', tk: typeof m.tk === 'string' && m.tk.length <= 300 ? m.tk : '', pts: 0, r: null, g: 0, c });
-            c.send({ t: 'ok' }); if (fase === 'lobby') lobby();
-          } else if (m.t === 'resp' && fase === 'pergunta' && m.i === i) {
-            const j = jog.get(c.peer);
-            if (j && !j.r && Number.isInteger(m.op) && m.op >= 0 && m.op < quiz[i].op.length) {
-              j.r = { op: m.op, ms: Date.now() - t0 }; c.send({ t: 'recebida' }); pergunta();
-              if ([...jog.values()].every(x => x.r)) encerrar();
-            }
+          if (m.t === 'ping') { try { c.send({ t: 'pong' }); } catch (e) {} return; }
+          if (m.t === 'entrar') return entrou(c, m);
+          const j = jog.get(c._jid);
+          if (!j || j.c !== c) return;
+          if (m.t === 'resp' && fase === 'pergunta' && m.i === i && !j.r && Number.isInteger(m.op) && m.op >= 0 && m.op < quiz[i].op.length) {
+            j.r = { op: m.op, ms: Date.now() - t0 }; enviar(j, { t: 'recebida' }); pergunta();
+            if (todosResponderam()) encerrar();
           }
         });
-        c.on('close', () => { if (fase === 'lobby') { jog.delete(c.peer); lobby(); } });
+        c.on('close', () => {
+          const j = jog.get(c._jid);
+          if (!j || j.c !== c) return; // já foi substituída por uma reconexão
+          if (fase === 'lobby') setTimeout(() => { if (jog.get(c._jid) === j && j.c === c && fase === 'lobby') { jog.delete(c._jid); lobby(); } }, 20000);
+          redesenhar();
+          if (fase === 'pergunta' && todosResponderam()) encerrar();
+        });
       });
+      const vis = () => { if (!document.hidden && meu.disconnected && !meu.destroyed) { try { meu.reconnect(); } catch (e) {} } };
+      document.addEventListener('visibilitychange', vis); limpezas.push(() => document.removeEventListener('visibilitychange', vis));
     }
+
+    // A abertura vale pontos para o professor; se a internet falhar, o fim da partida registra tudo de uma vez.
+    async function registrarAbertura() {
+      if (registrouAbertura) return;
+      try { await Api.abrirPartida({ pid, sala: codigo, perguntas: quiz.length }); registrouAbertura = true; } catch (e) { console.warn('abertura não registrada', e); }
+    }
+
     function lobby() {
-      if (fase !== 'lobby') return;
+      if (fase !== 'lobby' || !aberta) return;
       const link = location.origin + location.pathname + '?sala=' + codigo + '#entrar';
+      const js = [...jog.values()];
       tela(h('p', { textContent: 'Código da sala' }), h('div', { class: 'codigo', textContent: codigo }), qrSvg(link),
         h('p', { class: 'link', textContent: link }),
-        h('p', { textContent: jog.size + ' jogador(es) na sala' }),
-        h('div', { class: 'nomes' }, ...[...jog.values()].map(j => h('span', { textContent: j.nome }))),
-        h('button', { class: 'grande', textContent: 'Iniciar', disabled: !jog.size, onclick: proxima }));
+        h('p', { textContent: js.length + ' jogador(es) na sala' }),
+        h('div', { class: 'nomes' }, ...js.map((j) => h('span', { class: 'chip' + (on(j) ? '' : ' off'), title: on(j) ? '' : 'Reconectando…' }, av(j.av, 24), h('span', { textContent: j.nome })))),
+        h('button', { class: 'grande', textContent: 'Iniciar', disabled: !js.length, onclick: proxima }));
     }
-    function proxima() { i++; if (i >= quiz.length) return fim(); seg = quiz[i].seg || segPadrao; fase = 'pergunta'; jog.forEach(j => { j.r = null; j.g = 0; }); t0 = Date.now();
+    function proxima() {
+      i++; if (i >= quiz.length) return fim();
+      seg = quiz[i].seg || segPadrao; fase = 'pergunta'; jog.forEach((j) => { j.r = null; j.g = 0; j.res = null; }); t0 = Date.now();
+      registrarAbertura();
       const p = quiz[i]; todos({ t: 'pergunta', i, total: quiz.length, q: p.q, op: p.op, seg });
-      clearTimeout(timer); timer = setTimeout(encerrar, seg * 1000); pergunta(); }
+      clearTimeout(timer); timer = setTimeout(encerrar, seg * 1000); pergunta();
+    }
     function pergunta() {
       if (fase !== 'pergunta') return;
-      const p = quiz[i], n = [...jog.values()].filter(j => j.r).length;
+      const p = quiz[i], n = [...jog.values()].filter((j) => j.r).length;
       tela(h('small', { textContent: `Pergunta ${i + 1} de ${quiz.length}` }), h('h2', { textContent: p.q }),
         h('div', { class: 'barra' }, h('i', { style: `animation-duration:${seg}s` })),
         opcoes(p.op), h('p', { textContent: `${n} de ${jog.size} responderam` }),
@@ -104,27 +196,28 @@
     function encerrar() {
       if (fase !== 'pergunta') return; clearTimeout(timer); fase = 'resultado';
       const p = quiz[i], n = p.op.map(() => 0);
-      jog.forEach(j => { if (j.r) { n[j.r.op]++; if (j.r.op === p.c) { j.g = Math.round(1000 * (1 - .5 * Math.min(j.r.ms, seg * 1000) / (seg * 1000))); j.pts += j.g; } } });
+      jog.forEach((j) => { if (j.r) { n[j.r.op]++; if (j.r.op === p.c) { j.g = Math.round(1000 * (1 - .5 * Math.min(j.r.ms, seg * 1000) / (seg * 1000))); j.pts += j.g; } } });
       const rk = rank();
-      jog.forEach(j => j.c.open && j.c.send({ t: 'resultado', c: p.c, ok: !!j.r && j.r.op === p.c, g: j.g, pts: j.pts, pos: rk.indexOf(j) + 1, de: rk.length }));
+      jog.forEach((j) => { j.res = { t: 'resultado', c: p.c, ok: !!j.r && j.r.op === p.c, g: j.g, pts: j.pts, pos: rk.indexOf(j) + 1, de: rk.length }; enviar(j, j.res); });
       tela(h('h2', { textContent: p.q }), opcoes(p.op, null, { c: p.c, n }), h('h3', { textContent: 'Ranking' }), lista(rk),
         h('button', { class: 'grande', textContent: i + 1 < quiz.length ? 'Próxima' : 'Ver resultado final', onclick: proxima }));
     }
     function fim() {
-      fase = 'fim'; const rk = rank(), top = rk.slice(0, 5).map(j => ({ nome: j.nome, pts: j.pts }));
-      jog.forEach(j => j.c.open && j.c.send({ t: 'fim', top, pts: j.pts, pos: rk.indexOf(j) + 1, de: rk.length }));
+      fase = 'fim'; const rk = rank(), top = rk.slice(0, 5).map((j) => ({ nome: j.nome, pts: j.pts, av: j.av }));
+      rk.forEach((j, n) => { j.fim = { t: 'fim', top, pts: j.pts, pos: n + 1, de: rk.length }; enviar(j, j.fim); });
       const jogadores = rk.map((j, n) => ({ tk: j.tk, pontos: j.pts, pos: n + 1 })).filter((j) => j.tk);
-      const estado = h('p', { class: 'msg', role: 'status' });
-      const tentar = h('button', { class: 'sec', textContent: 'Tentar salvar de novo', hidden: true, onclick: () => salvar() });
+      const estadoReg = h('p', { class: 'msg', role: 'status' });
+      const tentar = h('button', { class: 'sec', textContent: 'Tentar registrar de novo', hidden: true, onclick: () => salvar() });
       async function salvar() {
-        if (!jogadores.length) { estado.textContent = 'Nenhum aluno com conta nesta partida.'; return; }
-        estado.textContent = 'Salvando a pontuação dos alunos com conta…'; tentar.hidden = true;
+        estadoReg.textContent = 'Registrando a partida…'; tentar.hidden = true;
         try {
           const d = await Api.partida({ pid, sala: codigo, perguntas: quiz.length, total: rk.length, jogadores });
-          estado.textContent = d.ja_registrada ? 'Pontuação já estava salva. ✓' : `Pontuação salva para ${d.creditados} aluno(s) com conta. ✓`;
-        } catch (e) { estado.textContent = 'Não foi possível salvar a pontuação (internet ou sessão expirada).'; tentar.hidden = false; }
+          estadoReg.textContent = d.ja_registrada ? 'Partida já estava registrada. ✓'
+            : `Partida registrada! Você ganhou ${d.pontos_professor} pontos${d.creditados ? ` e ${d.creditados} aluno(s) com conta pontuaram` : ''}. ✓`;
+          window.dispatchEvent(new Event('pontuo:atualizar'));
+        } catch (e) { estadoReg.textContent = 'Não foi possível registrar a partida (internet ou sessão expirada).'; tentar.hidden = false; }
       }
-      tela(h('h2', { textContent: 'Resultado final' }), lista(rk, 10), estado, tentar,
+      tela(h('h2', { textContent: 'Resultado final' }), lista(rk, 10), estadoReg, tentar,
         h('button', { class: 'grande', textContent: 'Fechar', onclick: () => { fechar(); document.getElementById('jogo').hidden = true; } }));
       salvar();
     }
@@ -132,36 +225,88 @@
   }
 
   // ---------- Jogador (aluno) ----------
-  function entrar(codigo, nome, ficha) {
+  function entrar(codigo, nome, ficha, avatar) {
     codigo = (codigo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!codigo) return;
     fechar(); tela(h('h2', { textContent: 'Conectando…' }));
-    let ok = false, conn;
-    const falha = (t) => tela(h('h2', { textContent: t || 'Não foi possível entrar na sala.' }), h('p', { textContent: 'Confira o código e a internet e tente de novo.' }));
-    peer = new Peer();
-    peer.on('error', () => !ok && falha());
-    peer.on('open', () => {
-      conn = peer.connect('pontuo-' + codigo, { reliable: true });
-      conn.on('open', () => conn.send({ t: 'entrar', nome, tk: ficha || undefined }));
-      conn.on('close', () => tela(h('h2', { textContent: 'A sala foi encerrada.' })));
-      conn.on('data', (m) => {
-        if (!m || typeof m !== 'object') return;
-        if (m.t === 'ok') { ok = true; tela(h('h2', { textContent: 'Você entrou!' }), h('p', { textContent: 'Aguarde o professor iniciar.' })); }
-        else if (m.t === 'fechada') falha('Esta sala já começou.');
-        else if (m.t === 'pergunta') {
-          tela(h('small', { textContent: `Pergunta ${m.i + 1} de ${m.total}` }), h('h2', { textContent: m.q }),
-            h('div', { class: 'barra' }, h('i', { style: `animation-duration:${m.seg}s` })),
-            opcoes(m.op, (op) => { conn.send({ t: 'resp', i: m.i, op }); tela(h('h2', { textContent: 'Resposta enviada!' }), h('p', { textContent: 'Aguarde o resultado.' })); }));
-        } else if (m.t === 'resultado') {
-          tela(h('h2', { class: m.ok ? 'acerto' : 'erro', textContent: m.ok ? 'Acertou! 🎉' : 'Errou…' }), h('p', { textContent: `+${m.g} pontos · total ${m.pts}` }),
-            h('p', { textContent: `Você está em ${m.pos}º de ${m.de}` }));
-        } else if (m.t === 'fim') {
-          [4000, 12000].forEach((ms) => setTimeout(() => window.dispatchEvent(new Event('pontuo:atualizar')), ms));
-          tela(h('h2', { textContent: `Você terminou em ${m.pos}º lugar!` }), h('p', { textContent: `${m.pts} pontos` }), h('h3', { textContent: 'Top 5' }), lista(m.top));
-        }
+    // Identidade estável na sala: se a conexão cair, o professor reconhece o mesmo aluno ao voltar.
+    const jid = Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(36).padStart(2, '0')).join('');
+    let conn = null, ok = false, fim = false, ultima = Date.now(), tentativas = 0, esperando = false;
+
+    const falha = (t, p) => {
+      fim = true;
+      tela(h('h2', { textContent: t || 'Não foi possível entrar na sala.' }), h('p', { textContent: p || 'Confira o código e a internet e tente de novo.' }));
+    };
+    const receber = (m) => {
+      if (!m || typeof m !== 'object' || m.t === 'pong') return;
+      if (m.t === 'fechada') return falha('Esta sala já começou.');
+      ok = true;
+      if (m.t === 'ok') tela(h('h2', { textContent: 'Você entrou!' }), h('p', { textContent: 'Aguarde o professor iniciar.' }));
+      else if (m.t === 'recebida') tela(h('h2', { textContent: 'Resposta enviada!' }), h('p', { textContent: 'Aguarde o resultado.' }));
+      else if (m.t === 'pergunta') {
+        tela(h('small', { textContent: `Pergunta ${m.i + 1} de ${m.total}` }), h('h2', { textContent: m.q }),
+          h('div', { class: 'barra' }, h('i', { style: `animation-duration:${m.seg}s` })),
+          opcoes(m.op, (op) => {
+            try { conn.send({ t: 'resp', i: m.i, op }); } catch (e) {}
+            tela(h('h2', { textContent: 'Resposta enviada!' }), h('p', { textContent: 'Aguarde o resultado.' }));
+          }));
+      } else if (m.t === 'resultado') {
+        tela(h('h2', { class: m.ok ? 'acerto' : 'erro', textContent: m.ok ? 'Acertou! 🎉' : 'Errou…' }), h('p', { textContent: `+${m.g} pontos · total ${m.pts}` }),
+          h('p', { textContent: `Você está em ${m.pos}º de ${m.de}` }));
+      } else if (m.t === 'fim') {
+        fim = true;
+        [4000, 12000].forEach((ms) => setTimeout(() => window.dispatchEvent(new Event('pontuo:atualizar')), ms));
+        tela(h('h2', { textContent: `Você terminou em ${m.pos}º lugar!` }), h('p', { textContent: `${m.pts} pontos` }), h('h3', { textContent: 'Top 5' }), lista(m.top));
+      }
+    };
+
+    const conectar = () => {
+      if (fim || !peer || (conn && conn.open && ok)) return;
+      const c = conn = peer.connect('pontuo-' + codigo, { reliable: true });
+      c.on('open', () => { tentativas = 0; ultima = Date.now(); c.send({ t: 'entrar', jid, nome, tk: ficha || undefined, av: avatar || undefined }); });
+      c.on('data', (m) => { if (c === conn) { ultima = Date.now(); receber(m); } });
+      c.on('close', () => { if (c === conn && !fim) religar('Conexão perdida. Reconectando…'); });
+      c.on('error', () => { if (c === conn && !fim) religar('Conexão instável. Tentando de novo…'); });
+    };
+    const religar = (msg) => {
+      if (fim || esperando) return;
+      if (++tentativas > (ok ? 15 : 5)) {
+        return ok ? falha('A sala foi encerrada.', 'Se a partida ainda estiver acontecendo, entre de novo com o código.')
+          : falha('Não foi possível entrar na sala.', 'Confira o código. Em algumas redes de escola a conexão direta é bloqueada: tente usar os dados móveis.');
+      }
+      esperando = true;
+      if (ok) tela(h('h2', { textContent: 'Reconectando…' }), h('p', { textContent: msg || '' }));
+      setTimeout(() => {
+        esperando = false; if (fim) return;
+        try {
+          if (!peer || peer.destroyed) iniciarPeer();
+          else if (peer.disconnected) peer.reconnect();
+          else { const velha = conn; conn = null; try { velha && velha.close(); } catch (e) {} conectar(); }
+        } catch (e) { religar(); }
+      }, 2000);
+    };
+    const iniciarPeer = () => {
+      const meu = peer = novoPeer(undefined);
+      meu.on('open', () => { if (peer === meu) conectar(); });
+      meu.on('disconnected', () => { if (peer === meu && !fim) { try { meu.reconnect(); } catch (e) {} } });
+      meu.on('error', (e) => {
+        if (peer !== meu || fim) return;
+        if (e.type === 'peer-unavailable') return ok ? religar('A sala não responde. Tentando de novo…') : falha('Sala não encontrada.', 'Confira o código com o professor.');
+        religar('Conexão instável. Tentando de novo…');
       });
-    });
-    setTimeout(() => { if (!ok && peer) falha(); }, 10000);
+    };
+
+    // Batimento: detecta conexão "morta" (celular que dormiu, troca de Wi-Fi) e religa sozinho.
+    const bat = setInterval(() => {
+      if (fim) return;
+      if (conn && conn.open) { try { conn.send({ t: 'ping' }); } catch (e) {} }
+      if (ok && !esperando && Date.now() - ultima > 25000) religar('Sem resposta da sala. Reconectando…');
+    }, 8000);
+    const vis = () => { if (!document.hidden && !fim && !esperando && (!conn || !conn.open)) religar('Reconectando…'); };
+    document.addEventListener('visibilitychange', vis);
+    limpezas.push(() => { clearInterval(bat); document.removeEventListener('visibilitychange', vis); fim = true; });
+    setTimeout(() => { if (!ok && !fim && !esperando) religar(); }, 12000);
+    iniciarPeer();
   }
 
   window.Jogo = { abrirSala, entrar };
