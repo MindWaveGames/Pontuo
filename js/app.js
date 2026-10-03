@@ -1,42 +1,171 @@
 const $ = (s) => document.querySelector(s);
+const h = (tag, p = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(p)) {
+    if (k === 'class') e.className = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (k.includes('-')) e.setAttribute(k, v); else e[k] = v;
+  }
+  e.append(...kids); return e;
+};
 const VIEWS = ['menu', 'entrar', 'quizz', 'ranking', 'perfil'];
 const ERROS = {
   chave_invalida: 'Chave não encontrada. Confira e tente de novo.',
   licenca_bloqueada: 'Esta licença está bloqueada. Fale com o administrador.',
   muitas_tentativas: 'Muitas tentativas. Aguarde alguns minutos.',
 };
-let prof = null;  // { nome } quando o professor está logado
-let aluno = null; // { apelido, nivel, pontos } quando o aluno está logado
+let prof = null;  // professor logado: { nome, avatar, nivel, pontos, de, ate, partidas, jogadores }
+let aluno = null; // aluno logado: { apelido, avatar, nivel, pontos, de, ate, historico }
+const PROF_BASE = { avatar: null, nivel: 1, pontos: 0, de: 0, ate: 5000, partidas: 0, jogadores: 0 };
+
+// ---------- Carregamento sob demanda ----------
+const carregar = (tag, attrs) => new Promise((ok, no) => {
+  const e = Object.assign(document.createElement(tag), attrs);
+  e.onload = ok; e.onerror = no; document.head.append(e);
+});
+let _av, _jogo, _editor, _conta;
+const carregarAvatares = () => _av || (_av = carregar('script', { src: 'js/avatares.js' }));
+const carregarJogo = () => _jogo || (_jogo = Promise.all([
+  carregar('link', { rel: 'stylesheet', href: 'css/jogo.css' }),
+  carregar('script', { src: 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js' }),
+  carregar('script', { src: 'js/vendor/qrcode.js' }),
+]).then(() => carregar('script', { src: 'js/jogo.js' })).then(() => window.Jogo));
+const carregarEditor = () => _editor || (_editor = carregar('script', { src: 'js/editor.js' }));
+
+// ---------- Cartão do usuário e telas ----------
+function pintarAvatar(el, id) {
+  const a = window.Avatar && Avatar.info(id);
+  el.classList.toggle('tem', !!a);
+  el.textContent = a ? a.e : '';
+  el.style.background = a ? a.cor : '';
+}
+
+function renderHist() {
+  const el = $('#hist'), hs = aluno && aluno.historico;
+  el.replaceChildren();
+  if (prof) {
+    el.append(h('p', { class: 'vazio', textContent: `${prof.partidas} sala(s) abertas · ${prof.jogadores} aluno(s) com conta participaram.` }));
+    return;
+  }
+  if (!hs || !hs.length) {
+    el.append(h('p', { class: 'vazio', textContent: aluno ? 'Nenhuma partida ainda.' : 'Entre na sua conta para ver seu histórico.' }));
+    return;
+  }
+  el.append(h('ul', { class: 'hist' }, ...hs.map((x) =>
+    h('li', { textContent: `${new Date(x.em * 1000).toLocaleDateString('pt-BR')} · ${x.posicao}º de ${x.total} · +${x.pontos} pts` }))));
+}
+
+function renderSala() {
+  const quem = $('#quem-sala');
+  $('#apelido').hidden = !!aluno; // logado: o nome vem da conta
+  quem.hidden = !aluno;
+  if (aluno) quem.replaceChildren('Você vai entrar como ', Avatar.el(aluno.avatar, 26), h('strong', { textContent: aluno.apelido }));
+}
 
 function render() {
-  const on = !!prof;
+  const u = prof || aluno;
   // textContent: nomes nunca são interpretados como HTML
-  $('#card-papel').textContent = on ? 'PROFESSOR' : aluno ? 'ALUNO' : 'VISITANTE';
-  $('#card-nome').textContent = on ? prof.nome : aluno ? aluno.apelido : 'Anônimo';
-  $('#card-nivel').textContent = on ? '1' : aluno ? aluno.nivel : '—';
-  $('#card-pts').textContent = on ? '0' : aluno ? aluno.pontos : '—';
-  $('#conta').hidden = on;
-  renderHist();
-  $('#quizz-bloq').hidden = on;
-  $('#quizz-ok').hidden = !on;
-  $('#btn-sair').hidden = !on;
-  if (on && !$('#quizz-ok').dataset.pronto) {
-    $('#quizz-ok').dataset.pronto = 1;
-    carregarJogo().then(async (J) => { await carregarEditor(); Editor.montar($('#quizz-ok'), J.abrirSala); }).catch(() => { $('#quizz-ok').textContent = 'Não foi possível carregar o criador de quizz.'; });
+  $('#card-papel').textContent = prof ? 'PROFESSOR' : aluno ? 'ALUNO' : 'VISITANTE';
+  $('#card-nome').textContent = prof ? prof.nome : aluno ? aluno.apelido : 'Anônimo';
+  $('#card-nivel').textContent = u ? u.nivel : '—';
+  $('#card-pts').textContent = u ? u.pontos : '—';
+  document.querySelectorAll('.avatar').forEach((el) => pintarAvatar(el, u && u.avatar));
+  const pg = $('#prog');
+  pg.hidden = !u;
+  if (u) {
+    const pct = Math.min(100, Math.max(0, Math.round((u.pontos - u.de) / Math.max(1, u.ate - u.de) * 100)));
+    pg.querySelector('i').style.width = pct + '%';
+    pg.querySelector('small').textContent = `${u.ate - u.pontos} pts para o nível ${u.nivel + 1}`;
+  }
+  $('#quizz-bloq').hidden = !!prof;
+  $('#quizz-ok').hidden = !prof;
+  $('#btn-sair').hidden = !prof;
+  renderSala(); renderHist();
+  if (prof && !$('#quizz-ok').dataset.pronto) {
+    $('#quizz-ok').dataset.pronto = '1';
+    carregarJogo().then(async (J) => { await carregarEditor(); Editor.montar($('#quizz-ok'), J.abrirSala); })
+      .catch(() => { $('#quizz-ok').textContent = 'Não foi possível carregar o criador de quizz.'; });
   }
 }
 
 function ir(v) {
   if (!VIEWS.includes(v)) v = 'menu';
-  VIEWS.forEach(n => { $('#v-' + n).hidden = n !== v; });
-  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.go === v));
+  VIEWS.forEach((n) => { $('#v-' + n).hidden = n !== v; });
+  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('on', b.dataset.go === v));
   if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v);
   render();
-  if (v === 'perfil') { atualizarAluno(); montarConta(); }
+  if (v === 'perfil') { atualizarUsuario(); montarConta(); }
   if (v === 'ranking') carregarRanking();
 }
 
-document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => ir(b.dataset.go)));
+async function atualizarUsuario() {
+  if (prof) { const p = await Api.professor.perfil(); if (p) prof = p; }
+  if (aluno) { const a = await Api.aluno.perfil(); if (a) aluno = a; }
+  render();
+  if (!$('#v-perfil').hidden) montarConta();
+}
+addEventListener('pontuo:atualizar', atualizarUsuario);
+
+async function montarConta() {
+  try {
+    await (_conta || (_conta = carregar('script', { src: 'js/conta.js' })));
+    Conta.montar($('#conta'), { aluno, prof, aoMudar: (tipo, dados, op) => {
+      if (tipo === 'aluno') aluno = { ...(aluno || {}), ...dados };
+      else if (tipo === 'prof') prof = { ...(prof || {}), ...dados };
+      else if (tipo === 'sair') aluno = null;
+      render();
+      if (!(op && op.manter)) { montarConta(); if (tipo === 'aluno') atualizarUsuario(); } // login/cadastro: busca o histórico completo
+    } });
+  } catch (err) { $('#conta').textContent = 'Não foi possível carregar a conta. Verifique a internet.'; }
+}
+
+// ---------- Ranking: pódio (top 3) em colunas + lista com avatar ----------
+let rkAba = 'alunos', rkDados = null;
+
+function prepararRanking() {
+  const sec = $('#v-ranking');
+  if (sec.dataset.pronto) return;
+  sec.dataset.pronto = '1';
+  const antigo = sec.querySelector('.duas'); if (antigo) antigo.remove();
+  sec.append(
+    h('div', { class: 'abas', role: 'tablist' }, ...[['alunos', 'Alunos'], ['professores', 'Professores']].map(([k, t]) =>
+      h('button', { type: 'button', class: 'aba', role: 'tab', textContent: t, 'data-k': k, onclick: () => { rkAba = k; desenharRanking(); } }))),
+    h('div', { id: 'rk-area' }));
+}
+
+async function carregarRanking() {
+  prepararRanking();
+  try { rkDados = await Api.ranking(); }
+  catch (e) { if (!rkDados) { $('#rk-area').textContent = 'Não foi possível carregar o ranking agora.'; return; } }
+  desenharRanking();
+}
+
+function desenharRanking() {
+  document.querySelectorAll('#v-ranking .aba').forEach((b) => {
+    const on = b.dataset.k === rkAba; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on));
+  });
+  const eProf = rkAba === 'professores', area = $('#rk-area'), itens = (rkDados && rkDados[rkAba]) || [];
+  if (!itens.length) {
+    area.replaceChildren(h('p', { class: 'vazio', textContent: eProf ? 'Nenhum professor pontuou ainda.' : 'Apenas alunos cadastrados aparecem aqui.' }));
+    return;
+  }
+  const nome = (x) => (eProf ? x.nome : x.apelido), max = Math.max(1, itens[0].pontos);
+  const col = (k) => {
+    const x = itens[k];
+    if (!x) return h('div', { class: 'col vazia' });
+    const alt = Math.max(30, Math.round(x.pontos / max * 140)); // altura proporcional aos pontos
+    return h('div', { class: 'col lugar' + (k + 1) }, Avatar.el(x.avatar, 52), h('strong', { textContent: nome(x) }),
+      h('small', { textContent: `${x.pontos} pts` }), h('div', { class: 'bar', style: `height:${alt}px` }, h('span', { textContent: `${k + 1}º` })));
+  };
+  const podio = h('div', { class: 'podio', role: 'group',
+    'aria-label': 'Top 3: ' + itens.slice(0, 3).map((x, k) => `${k + 1}º ${nome(x)} com ${x.pontos} pontos`).join('; ') }, col(1), col(0), col(2));
+  const resto = itens.slice(3);
+  area.replaceChildren(podio, resto.length ? h('ul', { class: 'rk' }, ...resto.map((x) =>
+    h('li', {}, h('span', { class: 'nm' }, Avatar.el(x.avatar, 34), h('span', { textContent: nome(x) })),
+      h('b', { textContent: eProf ? `${x.pontos} pts · ${x.partidas} sala(s)` : `${x.pontos} pts · nível ${x.nivel}` })))) : '');
+}
+
+// ---------- Eventos ----------
+document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => ir(b.dataset.go)));
 addEventListener('hashchange', () => ir(location.hash.slice(1)));
 
 const abrirLogin = () => { $('#msg-chave').textContent = ''; $('#dlg').showModal(); $('#chave').focus(); };
@@ -50,7 +179,8 @@ $('#f-chave').addEventListener('submit', async (e) => {
   msg.textContent = 'Verificando…';
   try {
     const d = await Api.entrar($('#chave').value.trim());
-    prof = { nome: d.professor };
+    prof = { nome: d.professor, ...PROF_BASE };
+    const p = await Api.professor.perfil(); if (p) prof = p;
     $('#dlg').close();
     ir('quizz');
   } catch (err) {
@@ -58,93 +188,39 @@ $('#f-chave').addEventListener('submit', async (e) => {
   }
 });
 
-$('#btn-sair').addEventListener('click', () => { Api.sair(); prof = null; ir('menu'); });
-
-// O jogo (PeerJS + jogo.js) só é baixado quando alguém usa a sala.
-let _jogo;
-const carregar = (tag, attrs) => new Promise((ok, no) => {
-  const e = Object.assign(document.createElement(tag), attrs);
-  e.onload = ok; e.onerror = no; document.head.append(e);
+$('#btn-sair').addEventListener('click', () => {
+  Api.sair(); prof = null;
+  const q = $('#quizz-ok'); delete q.dataset.pronto; q.replaceChildren(); // o próximo professor começa limpo
+  ir('menu');
 });
-const carregarJogo = () => _jogo || (_jogo = Promise.all([
-  carregar('link', { rel: 'stylesheet', href: 'css/jogo.css' }),
-  carregar('script', { src: 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js' }),
-  carregar('script', { src: 'js/vendor/qrcode.js' }),
-]).then(() => carregar('script', { src: 'js/jogo.js' })).then(() => window.Jogo));
 
 $('#f-sala').addEventListener('submit', async (e) => {
   e.preventDefault();
-  try { (await carregarJogo()).entrar($('#sala').value.trim(), aluno ? aluno.apelido : $('#apelido').value.trim(), aluno ? await Api.aluno.ficha() : null); }
-  catch (err) { $('#msg-sala').textContent = 'Não foi possível carregar o jogo. Verifique a internet.'; }
+  try {
+    const J = await carregarJogo();
+    J.entrar($('#sala').value.trim(), aluno ? aluno.apelido : $('#apelido').value.trim(),
+      aluno ? await Api.aluno.ficha() : null, aluno ? aluno.avatar : null);
+  } catch (err) { $('#msg-sala').textContent = 'Não foi possível carregar o jogo. Verifique a internet.'; }
 });
 
-function renderHist() {
-  const el = $('#hist'), hs = aluno && aluno.historico;
-  el.replaceChildren();
-  if (!hs || !hs.length) {
-    const p = document.createElement('p'); p.className = 'vazio';
-    p.textContent = aluno ? 'Nenhuma partida ainda.' : prof ? 'Histórico do professor em breve.' : 'Entre na sua conta para ver seu histórico.';
-    el.append(p); return;
-  }
-  const ul = document.createElement('ul'); ul.className = 'hist';
-  for (const x of hs) {
-    const li = document.createElement('li');
-    li.textContent = `${new Date(x.em * 1000).toLocaleDateString('pt-BR')} · ${x.posicao}º de ${x.total} · +${x.pontos} pts`;
-    ul.append(li);
-  }
-  el.append(ul);
-}
-
-async function atualizarAluno() {
-  if (!aluno) return;
-  const a = await Api.aluno.perfil();
-  if (a) { aluno = a; render(); if (!$('#v-perfil').hidden) montarConta(); }
-}
-addEventListener('pontuo:atualizar', atualizarAluno);
-
-function lista(col, itens, linha, vazio) {
-  const antigo = col.querySelector('.vazio, ol'); if (antigo) antigo.remove();
-  if (!itens.length) { const p = document.createElement('p'); p.className = 'vazio'; p.textContent = vazio; col.append(p); return; }
-  const ol = document.createElement('ol'); ol.className = 'rk';
-  itens.forEach((it, n) => {
-    const [nome, valor] = linha(it);
-    const li = document.createElement('li'), a = document.createElement('span'), b = document.createElement('b');
-    a.textContent = `${n + 1}. ${nome}`; b.textContent = valor; li.append(a, b); ol.append(li);
-  });
-  col.append(ol);
-}
-
-async function carregarRanking() {
-  const cols = document.querySelectorAll('#v-ranking .duas > div');
-  try {
-    const d = await Api.ranking();
-    lista(cols[0], d.professores, (p) => [p.nome, `${p.partidas} partida(s)`], 'Sem dados ainda.');
-    lista(cols[1], d.alunos, (a) => [a.apelido, `${a.pontos} pts`], 'Apenas alunos cadastrados aparecem aqui.');
-  } catch (e) { /* mantém o texto anterior se a API estiver fora do ar */ }
-}
-
-let _editor;
-const carregarEditor = () => _editor || (_editor = carregar('script', { src: 'js/editor.js' }));
-
-let _conta;
-async function montarConta() {
-  if (prof) return;
-  try {
-    await (_conta || (_conta = carregar('script', { src: 'js/conta.js' })));
-    Conta.montar($('#conta'), { aluno, aoMudar: (a) => { aluno = a; render(); montarConta(); } });
-  } catch (err) { $('#conta').textContent = 'Não foi possível carregar a conta. Verifique a internet.'; }
-}
-
+// ---------- Início ----------
 (async () => {
-  const caixa = document.createElement('div');
-  caixa.id = 'conta';
-  $('#v-perfil').insertBefore(caixa, $('#btn-sair'));
-  const aviso = $('#v-perfil p'); if (aviso) aviso.remove(); // texto provisório da etapa anterior
-  const hist = document.createElement('div'); hist.id = 'hist';
-  const vazio = document.querySelector('.interno .vazio'); if (vazio) vazio.replaceWith(hist); else document.querySelector('.interno').append(hist);
+  try { await carregarAvatares(); } catch (e) {}
+  $('#v-perfil').insertBefore(h('div', { id: 'conta' }), $('#btn-sair'));
+  const aviso = $('#v-perfil p'); if (aviso) aviso.remove(); // texto provisório de versões antigas
+  const interno = document.querySelector('.interno');
+  interno.insertBefore(h('div', { id: 'prog', class: 'prog', hidden: true }, h('div', { class: 'trilho' }, h('i')), h('small')), interno.querySelector('h2'));
+  const vazio = interno.querySelector('.vazio'); const hist = h('div', { id: 'hist' });
+  if (vazio) vazio.replaceWith(hist); else interno.append(hist);
+  $('#f-sala').insertBefore(h('p', { id: 'quem-sala', class: 'quem-sala', hidden: true }), $('#apelido'));
+
   const s = Api.sessao();
-  if (s && await Api.valida()) prof = { nome: s.nome }; else Api.sair();
+  if (s && await Api.valida()) {
+    prof = { nome: s.nome, ...PROF_BASE };
+    const p = await Api.professor.perfil(); if (p) prof = p;
+  } else Api.sair();
   aluno = await Api.aluno.perfil();
+
   const sala = new URLSearchParams(location.search).get('sala');
   if (sala) { $('#sala').value = sala.toUpperCase().slice(0, 8); ir('entrar'); } else ir(location.hash.slice(1));
 })();
