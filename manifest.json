@@ -1,0 +1,20 @@
+{
+  "name": "Pontuô!",
+  "short_name": "Pontuô!",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#317EFB",
+  "icons": [
+    {
+      "src": "/images/ComDesenho.jpg",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/images/ComDesenho.jpg",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
