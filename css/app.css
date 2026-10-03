@@ -171,3 +171,16 @@ dialog .sec{background:var(--branco)}
 .avbtn[aria-pressed="true"]{border-color:var(--amarelo);background:#ffffff40}
 .avbtn:focus-visible{outline:3px solid #fff}
 @media(max-width:560px){.col .bar{font-size:1.1rem}.col strong{font-size:.85rem}.avs{grid-template-columns:repeat(4,1fr)}}
+
+/* ===== Pódio animado ===== */
+.col{position:relative}
+.col .bar{overflow:hidden}
+.podio.anim .col{opacity:0;transform:translateY(16px);transition:opacity .35s,transform .35s}
+.podio.anim .col.on{opacity:1;transform:none}
+.podio.anim .bar{height:0;transition:height 1.3s cubic-bezier(.2,.9,.25,1)}
+.coroa{font-size:1.6rem;line-height:1;animation:balanca 1.8s ease-in-out infinite}
+@keyframes balanca{50%{transform:translateY(-4px) rotate(-7deg)}}
+.rk li.surge{animation:surge .45s both}
+@keyframes surge{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
+.rk li.me{outline:3px solid var(--amarelo)}
+@media(prefers-reduced-motion:reduce){.podio.anim .col,.podio.anim .bar{transition:none}.coroa,.rk li.surge{animation:none}}
