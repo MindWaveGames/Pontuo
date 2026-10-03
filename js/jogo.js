@@ -13,6 +13,7 @@
   };
   const LETRAS = ['A', 'B', 'C', 'D'];
   const av = (id, t = 28) => (window.Avatar ? Avatar.el(id, t) : h('span'));
+  const som = (n, ...a) => { if (window.Som) Som.tocar(n, ...a); };
 
   // ---------- Rede (PeerJS) ----------
   const limpezas = [];
@@ -37,6 +38,7 @@
     o.hidden = false;
     o.replaceChildren(
       h('button', { class: 'sair', textContent: 'Sair', onclick: () => { fechar(); o.hidden = true; } }),
+      ...(window.Som ? [Som.botao()] : []),
       h('div', { class: 'rede', role: 'status', hidden: !msgRede, textContent: msgRede }),
       h('div', { class: 'jogo-in' }, ...n));
   };
@@ -185,7 +187,7 @@
     function proxima() {
       i++; if (i >= quiz.length) return fim();
       seg = quiz[i].seg || segPadrao; fase = 'pergunta'; jog.forEach((j) => { j.r = null; j.g = 0; j.res = null; }); t0 = Date.now();
-      registrarAbertura();
+      registrarAbertura(); som('inicio');
       const p = quiz[i]; todos({ t: 'pergunta', i, total: quiz.length, q: p.q, op: p.op, seg });
       clearTimeout(timer); timer = setTimeout(encerrar, seg * 1000); pergunta();
     }
@@ -207,7 +209,7 @@
         h('button', { class: 'grande', textContent: i + 1 < quiz.length ? 'Próxima' : 'Ver resultado final', onclick: proxima }));
     }
     function fim() {
-      fase = 'fim'; const rk = rank(), top = rk.slice(0, 5).map((j) => ({ nome: j.nome, pts: j.pts, av: j.av }));
+      fase = 'fim'; const rk = rank(), top = rk.slice(0, 10).map((j) => ({ nome: j.nome, pts: j.pts, av: j.av }));
       rk.forEach((j, n) => { j.fim = { t: 'fim', top, pts: j.pts, pos: n + 1, de: rk.length }; enviar(j, j.fim); });
       const jogadores = rk.map((j, n) => ({ tk: j.tk, pontos: j.pts, pos: n + 1 })).filter((j) => j.tk);
       const estadoReg = h('p', { class: 'msg', role: 'status' });
@@ -221,7 +223,10 @@
           window.dispatchEvent(new Event('pontuo:atualizar'));
         } catch (e) { estadoReg.textContent = 'Não foi possível registrar a partida (internet ou sessão expirada).'; tentar.hidden = false; }
       }
-      tela(h('h2', { textContent: 'Resultado final' }), lista(rk, 10), estadoReg, tentar,
+      const todos = rk.map((j) => ({ nome: j.nome, pontos: j.pts, avatar: j.av }));
+      tela(h('h2', { textContent: 'Resultado final' }),
+        ...(window.Podio ? [Podio.criar(todos.slice(0, 3), { animar: true }), Podio.lista(todos.slice(3), { inicio: 3, animar: true, atraso: 4200 })] : [lista(rk, 10)]),
+        estadoReg, tentar,
         h('button', { class: 'grande', textContent: 'Fechar', onclick: () => { fechar(); document.getElementById('jogo').hidden = true; } }));
       salvar();
     }
@@ -248,6 +253,7 @@
       if (m.t === 'ok') tela(h('h2', { textContent: 'Você entrou!' }), h('p', { textContent: 'Aguarde o professor iniciar.' }));
       else if (m.t === 'recebida') tela(h('h2', { textContent: 'Resposta enviada!' }), h('p', { textContent: 'Aguarde o resultado.' }));
       else if (m.t === 'pergunta') {
+        som('inicio');
         tela(h('small', { textContent: `Pergunta ${m.i + 1} de ${m.total}` }), h('h2', { textContent: m.q }),
           h('div', { class: 'barra' }, h('i', { style: `animation-duration:${m.seg}s` })),
           opcoes(m.op, (op) => {
@@ -255,12 +261,16 @@
             tela(h('h2', { textContent: 'Resposta enviada!' }), h('p', { textContent: 'Aguarde o resultado.' }));
           }));
       } else if (m.t === 'resultado') {
+        som(m.ok ? 'acerto' : 'erro');
         tela(h('h2', { class: m.ok ? 'acerto' : 'erro', textContent: m.ok ? 'Acertou! 🎉' : 'Errou…' }), h('p', { textContent: `+${m.g} pontos · total ${m.pts}` }),
           h('p', { textContent: `Você está em ${m.pos}º de ${m.de}` }));
       } else if (m.t === 'fim') {
-        fim = true;
+        fim = true; som(m.pos === 1 ? 'vitoria' : 'estrela');
         [4000, 12000].forEach((ms) => setTimeout(() => window.dispatchEvent(new Event('pontuo:atualizar')), ms));
-        tela(h('h2', { textContent: `Você terminou em ${m.pos}º lugar!` }), h('p', { textContent: `${m.pts} pontos` }), h('h3', { textContent: 'Top 5' }), lista(m.top));
+        const top = (m.top || []).map((x) => ({ nome: x.nome, pontos: x.pts, avatar: x.av }));
+        tela(h('h2', { textContent: `Você terminou em ${m.pos}º lugar!` }), h('p', { textContent: `${m.pts} pontos` }),
+          ...(window.Podio ? [Podio.criar(top.slice(0, 3), { animar: true }), Podio.lista(top.slice(3), { inicio: 3, animar: true, atraso: 4200, destaque: m.pos - 1 }),
+            m.pos > top.length ? h('p', { class: 'vazio', textContent: `Você: ${m.pos}º de ${m.de} · ${m.pts} pts` }) : ''] : [lista(top.map((x) => ({ nome: x.nome, pts: x.pontos, av: x.avatar })), 5)]));
       }
     };
 
