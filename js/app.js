@@ -20,14 +20,14 @@ const PROF_BASE = { avatar: null, nivel: 1, pontos: 0, de: 0, ate: 5000, partida
 // ---------- Carregamento sob demanda ----------
 const carregar = (tag, attrs) => new Promise((ok, no) => {
   const e = Object.assign(document.createElement(tag), attrs);
-  e.onload = ok; e.onerror = no; document.head.append(e);
+  e.onload = ok; e.onerror = () => no(new Error('arquivo não encontrado: ' + (attrs.src || attrs.href))); document.head.append(e);
 });
 let _av, _jogo, _editor, _conta;
 const carregarAvatares = () => _av || (_av = carregar('script', { src: 'js/avatares.js' }));
 const carregarJogo = () => _jogo || (_jogo = Promise.all([
   carregar('link', { rel: 'stylesheet', href: 'css/jogo.css' }),
-  carregar('script', { src: 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js' }),
-  carregar('script', { src: 'js/vendor/qrcode.js' }),
+  carregar('script', { src: 'js/vendor/peerjs.min.js' }),   // local: redes de escola costumam bloquear CDNs
+  carregar('script', { src: 'js/vendor/qrcode.js' }).catch(() => {}), // o QR é opcional: sem ele a sala abre igual
 ]).then(() => carregar('script', { src: 'js/jogo.js' })).then(() => window.Jogo));
 const carregarEditor = () => _editor || (_editor = carregar('script', { src: 'js/editor.js' }));
 
@@ -83,7 +83,14 @@ function render() {
   if (prof && !$('#quizz-ok').dataset.pronto) {
     $('#quizz-ok').dataset.pronto = '1';
     carregarJogo().then(async (J) => { await carregarEditor(); Editor.montar($('#quizz-ok'), J.abrirSala); })
-      .catch(() => { $('#quizz-ok').textContent = 'Não foi possível carregar o criador de quizz.'; });
+      .catch((err) => {
+        console.error('Criador de quizz:', err);
+        _jogo = _editor = null; // permite tentar de novo sem recarregar a página
+        const q = $('#quizz-ok'); delete q.dataset.pronto;
+        q.replaceChildren(h('p', { textContent: 'Não foi possível carregar o criador de quizz.' }),
+          h('p', { class: 'vazio', textContent: `Motivo: ${(err && err.message) || 'erro desconhecido'}` }),
+          h('button', { class: 'sec', type: 'button', textContent: 'Tentar de novo', onclick: render }));
+      });
   }
 }
 
@@ -115,7 +122,7 @@ async function montarConta() {
       render();
       if (!(op && op.manter)) { montarConta(); if (tipo === 'aluno') atualizarUsuario(); } // login/cadastro: busca o histórico completo
     } });
-  } catch (err) { $('#conta').textContent = 'Não foi possível carregar a conta. Verifique a internet.'; }
+  } catch (err) { console.error('Conta:', err); _conta = null; $('#conta').textContent = `Não foi possível carregar a conta (${(err && err.message) || 'erro'}).`; }
 }
 
 // ---------- Ranking: pódio (top 3) em colunas + lista com avatar ----------
@@ -200,7 +207,7 @@ $('#f-sala').addEventListener('submit', async (e) => {
     const J = await carregarJogo();
     J.entrar($('#sala').value.trim(), aluno ? aluno.apelido : $('#apelido').value.trim(),
       aluno ? await Api.aluno.ficha() : null, aluno ? aluno.avatar : null);
-  } catch (err) { $('#msg-sala').textContent = 'Não foi possível carregar o jogo. Verifique a internet.'; }
+  } catch (err) { console.error('Jogo:', err); _jogo = null; $('#msg-sala').textContent = `Não foi possível carregar o jogo (${(err && err.message) || 'erro'}). Verifique a internet e tente de novo.`; }
 });
 
 // ---------- Início ----------
