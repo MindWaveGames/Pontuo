@@ -79,6 +79,7 @@
   function hospedar(quiz, segPadrao) {
     let seg = segPadrao; // tempo da pergunta atual (cada pergunta pode ter o seu)
     const jog = new Map(); // jid -> { nome, av, tk, pts, r, g, res, fim, c }
+    const banidos = new Set(); // jid de quem foi removido pelo professor: não entra de novo
     let i = -1, t0 = 0, timer = null, fase = 'lobby', codigo = '', aberta = false, registrouAbertura = false;
     const pid = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
     const cod = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
@@ -105,6 +106,7 @@
     function entrou(c, m) {
       const jid = typeof m.jid === 'string' && /^[a-z0-9]{8,16}$/.test(m.jid) ? m.jid : null;
       if (!jid) return;
+      if (banidos.has(jid)) { try { c.send({ t: 'removido' }); } catch (e) {} return; }
       let j = jog.get(jid);
       if (j) { // reconexão do mesmo aluno
         if (j.c && j.c !== c) { try { j.c.close(); } catch (e) {} }
@@ -112,7 +114,8 @@
       }
       if (fase !== 'lobby') { try { c.send({ t: 'fechada' }); } catch (e) {} return; }
       j = {
-        nome: String(m.nome || '').trim().slice(0, 20) || 'Anônimo',
+        // Nomes impróprios (de alunos anônimos) viram "Jogador N" antes de aparecer no telão.
+        nome: window.Moderacao ? Moderacao.limpar(m.nome, jog.size + 1) : String(m.nome || '').trim().slice(0, 20) || 'Anônimo',
         av: window.Avatar && Avatar.valido(m.av) ? m.av : '',
         tk: typeof m.tk === 'string' && m.tk.length <= 300 ? m.tk : '',
         pts: 0, r: null, g: 0, c,
@@ -181,8 +184,15 @@
       tela(h('p', { textContent: 'Código da sala' }), h('div', { class: 'codigo', textContent: codigo }), qrSvg(link),
         h('p', { class: 'link', textContent: link }),
         h('p', { textContent: js.length + ' jogador(es) na sala' }),
-        h('div', { class: 'nomes' }, ...js.map((j) => h('span', { class: 'chip' + (on(j) ? '' : ' off'), title: on(j) ? '' : 'Reconectando…' }, av(j.av, 24), h('span', { textContent: j.nome })))),
+        h('div', { class: 'nomes' }, ...[...jog.entries()].map(([jid, j]) => h('span', { class: 'chip' + (on(j) ? '' : ' off'), title: on(j) ? '' : 'Reconectando…' }, av(j.av, 24), h('span', { textContent: j.nome }),
+          h('button', { type: 'button', class: 'xis', textContent: '✕', title: `Remover ${j.nome}`, 'aria-label': `Remover ${j.nome} da sala`, onclick: () => remover(jid) })))),
         h('button', { class: 'grande', textContent: 'Iniciar', disabled: !js.length, onclick: proxima }));
+    }
+    function remover(jid) {
+      const j = jog.get(jid); if (!j) return;
+      banidos.add(jid); enviar(j, { t: 'removido' });
+      setTimeout(() => { try { j.c && j.c.close(); } catch (e) {} }, 200);
+      jog.delete(jid); lobby();
     }
     function proxima() {
       i++; if (i >= quiz.length) return fim();
@@ -249,6 +259,7 @@
     const receber = (m) => {
       if (!m || typeof m !== 'object' || m.t === 'pong') return;
       if (m.t === 'fechada') return falha('Esta sala já começou.');
+      if (m.t === 'removido') return falha('Você foi removido da sala.', 'Fale com o seu professor.');
       ok = true;
       if (m.t === 'ok') tela(h('h2', { textContent: 'Você entrou!' }), h('p', { textContent: 'Aguarde o professor iniciar.' }));
       else if (m.t === 'recebida') tela(h('h2', { textContent: 'Resposta enviada!' }), h('p', { textContent: 'Aguarde o resultado.' }));
