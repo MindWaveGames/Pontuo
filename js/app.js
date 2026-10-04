@@ -19,7 +19,7 @@ const PROF_BASE = { avatar: null, nivel: 1, pontos: 0, de: 0, ate: 5000, partida
 
 // ---------- Carregamento sob demanda ----------
 // Suba este número a cada atualização do site: força o navegador a baixar os arquivos novos (sem depender de Ctrl+F5).
-const VERSAO = '6';
+const VERSAO = '7';
 const comVersao = (u) => (u && !/^https?:/.test(u) ? `${u}?v=${VERSAO}` : u);
 const carregar = (tag, attrs) => new Promise((ok, no) => {
   const real = { ...attrs };
@@ -31,6 +31,7 @@ const carregar = (tag, attrs) => new Promise((ok, no) => {
 console.info('Pontuô front, versão', VERSAO);
 let _av, _jogo, _editor, _conta;
 const carregarAvatares = () => _av || (_av = carregar('script', { src: 'js/avatares.js' }).then(() => carregar('script', { src: 'js/podio.js' }))
+  .then(() => carregar('script', { src: 'js/moderacao.js' }).catch((e) => console.warn('Filtro de nomes indisponível:', e.message)))
   .then(() => carregar('script', { src: 'js/som.js' }).catch((e) => console.warn('Som indisponível:', e.message))));
 const carregarJogo = () => _jogo || (_jogo = Promise.all([
   carregar('link', { rel: 'stylesheet', href: 'css/jogo.css' }),
@@ -207,6 +208,9 @@ $('#btn-sair').addEventListener('click', () => {
 
 $('#f-sala').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const digitado = aluno ? '' : $('#apelido').value.trim();
+  if (digitado && window.Moderacao && !Moderacao.permitido(digitado)) { $('#msg-sala').textContent = 'Esse nome não pode ser usado. Escolha outro.'; return; }
+  $('#msg-sala').textContent = '';
   try {
     const J = await carregarJogo();
     J.entrar($('#sala').value.trim(), aluno ? aluno.apelido : $('#apelido').value.trim(),
