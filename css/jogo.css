@@ -35,3 +35,5 @@
 .jogo .som{position:fixed;top:12px;right:92px;z-index:11;width:52px;min-height:44px;background:#fff;border:3px solid var(--marinho);border-radius:12px;font-size:1.3rem;cursor:pointer}
 .rede{right:160px!important}
 .kids-btn{background:#ff8fab}
+.chip .xis{background:none;border:0;color:#fff;font-size:.9rem;opacity:.7;cursor:pointer;min-height:28px;min-width:28px;padding:0;border-radius:50%}
+.chip .xis:hover,.chip .xis:focus-visible{opacity:1;background:#ffffff33}
