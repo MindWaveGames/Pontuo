@@ -258,9 +258,20 @@
   const temVoz = () => !!(window.speechSynthesis && window.SpeechSynthesisUtterance);
   
   let listaVozes = [];
+  let vozFemPt = null;
+
   const carregarVozes = () => {
     if (!window.speechSynthesis) return;
     listaVozes = speechSynthesis.getVoices();
+    
+    // Filtra vozes em Português do Brasil (pt-BR ou pt_BR)
+    const ptBrVozes = listaVozes.filter(v => /pt-BR|pt_BR/i.test(v.lang));
+    
+    // Tenta encontrar uma voz feminina específica ou de alta qualidade (Google, Microsoft Neural, Luciana, Francisca, etc.)
+    vozFemPt = ptBrVozes.find(v => /luciana|francisca|maria|victoria|carlos|google|microsoft.*natural|online|female/i.test(v.name) && !v.name.toLowerCase().includes('daniel') && !v.name.toLowerCase().includes('antonio')) ||
+               ptBrVozes.find(v => /female|natural/i.test(v.name)) ||
+               ptBrVozes[0] ||
+               listaVozes.find(v => /^pt/i.test(v.lang));
   };
 
   if (window.speechSynthesis) {
@@ -276,19 +287,15 @@
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(texto);
       u.lang = 'pt-BR'; 
-      u.rate = 0.95; // Velocidade levemente reduzida para clareza
-      u.pitch = 1.05; // Tom levemente mais amigável/infantil
+      u.rate = 0.93; // Levemente mais pausado para dar clareza infantil
+      u.pitch = 1.1; // Tom levemente mais agudo/feminino e amigável
 
-      if (listaVozes.length === 0) {
-        listaVozes = speechSynthesis.getVoices();
+      if (!vozFemPt && listaVozes.length === 0) {
+        carregarVozes();
       }
 
-      // Tenta encontrar a melhor voz em pt-BR (priorizando Google, Microsoft, Natural ou Online)
-      const voz = listaVozes.find(v => /pt-BR|pt_BR/i.test(v.lang) && /google|microsoft|natural|online/i.test(v.name)) ||
-                  listaVozes.find(v => /^pt/i.test(v.lang));
-
-      if (voz) {
-        u.voice = voz;
+      if (vozFemPt) {
+        u.voice = vozFemPt;
       }
 
       speechSynthesis.speak(u);
