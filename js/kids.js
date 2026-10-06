@@ -250,7 +250,7 @@
       document.body.append(s); setTimeout(() => s.remove(), 1700);
     }
   }
-  // Leitura em voz alta (voz do próprio navegador, sem internet extra). Ajuda crianças que ainda não leem e leitores de tela.
+  // Leitura em voz alta otimizada para clareza e calmaria (com pausas reais programadas)
   const VOZ_KEY = 'pontuo_kids_voz';
   let vozAuto = false;
   try { vozAuto = localStorage.getItem(VOZ_KEY) === '1'; } catch (e) {}
@@ -278,56 +278,77 @@
     }
   }
 
+  // Função para calar imediatamente a fala anterior
+  const calar = () => { 
+    try { 
+      if (temVoz()) speechSynthesis.cancel(); 
+    } catch (e) {} 
+  };
+
+  const nomeOp = (op) => (op.txt.trim() || Picto.nome(op.vis));
+  
+  // Leitura sequencial controlada por blocos com pausas reais em milissegundos
+  const falarPausado = (p) => {
+    if (!temVoz()) return;
+    calar(); // Cancela qualquer fala anterior
+
+    let tempoAcumulado = 0;
+
+    const falarFrase = (texto, rate = 0.82) => {
+      setTimeout(() => {
+        if (!window.speechSynthesis) return;
+        const u = new SpeechSynthesisUtterance(texto);
+        u.lang = 'pt-BR';
+        u.rate = rate; // Bem calmo e pausado
+        u.pitch = 1.05;
+        if (!vozFemPt && listaVozes.length === 0) carregarVozes();
+        if (vozFemPt) u.voice = vozFemPt;
+        speechSynthesis.speak(u);
+      }, tempoAcumulado);
+    };
+
+    // 1. Lê a pergunta principal
+    if (p.q && p.q.trim()) {
+      falarFrase(p.q.trim(), 0.82);
+      tempoAcumulado += 2500; // Pausa após a pergunta
+    }
+
+    // 2. Lê as figuras (se houver)
+    if (p.vis && p.vis.length) {
+      const textoFigs = 'Figuras: ' + p.vis.map((id) => Picto.nome(id)).join(', ');
+      falarFrase(textoFigs, 0.85);
+      tempoAcumulado += 2000;
+    }
+
+    // 3. Lê cada alternativa de forma individual e bem espaçada
+    const ops = p.op.map((op, k) => ({ op, k })).filter(({ op }) => preenchida(op));
+    if (ops.length > 0) {
+      falarFrase('Alternativas.', 0.80);
+      tempoAcumulado += 1200;
+
+      ops.forEach(({ op, k }) => {
+        const item = nomeOp(op);
+        const textoAlt = `Alternativa ${LET[k]}. ${item}`;
+        falarFrase(textoAlt, 0.82);
+        tempoAcumulado += 2500; // Tempo de silêncio entre uma alternativa e outra
+      });
+    }
+  };
+
+  // Mantém a compatibilidade com chamadas simples (ex: "Muito bem!")
   const falar = (texto) => {
     if (!temVoz() || !texto) return;
     try {
-      speechSynthesis.cancel();
+      calar();
       const u = new SpeechSynthesisUtterance(texto);
       u.lang = 'pt-BR'; 
-      u.rate = 0.85; // Velocidade bem calma para dar tempo de absorção
+      u.rate = 0.85; 
       u.pitch = 1.05; 
-
-      if (!vozFemPt && listaVozes.length === 0) {
-        carregarVozes();
-      }
-
-      if (vozFemPt) {
-        u.voice = vozFemPt;
-      }
-
+      if (!vozFemPt && listaVozes.length === 0) carregarVozes();
+      if (vozFemPt) u.voice = vozFemPt;
       speechSynthesis.speak(u);
-    } catch (e) { /* sem voz disponível */ }
+    } catch (e) {}
   };
-
-  const calar = () => { try { if (temVoz()) speechSynthesis.cancel(); } catch (e) {} };
-  const nomeOp = (op) => (op.txt.trim() || Picto.nome(op.vis));
-  
-  // Texto lido com pausas fortes para o leitor não emendar as palavras
-  function textoCompleto(p) {
-    const partes = [];
-    
-    if (p.q.trim()) {
-      partes.push(p.q.trim());
-    }
-    
-    if (p.vis.length) {
-      partes.push('Figuras: ' + p.vis.map((id) => Picto.nome(id)).join(', '));
-    }
-    
-    const ops = p.op.map((op, k) => ({ op, k })).filter(({ op }) => preenchida(op));
-    if (ops.length > 0) {
-      // Adiciona uma quebra bem nítida entre as alternativas usando pontos seguidos de espaços longos
-      const textoOps = ops.map(({ op, k }) => {
-        const item = nomeOp(op);
-        return `Alternativa ${LET[k]}... ${item}`;
-      }).join('.   '); // Múltiplos espaços forçam o motor de fala a respirar
-      
-      partes.push('Escolha.   ' + textoOps);
-    }
-    
-    // Une tudo com pontos duplos para o sintetizador não atropelar os termos
-    return partes.join('.   ');
-  }
 
   function jogar(z) {
     const ps = z.perguntas, ganhou = ps.map(() => false);
@@ -348,7 +369,7 @@
             vozAuto = !vozAuto; try { localStorage.setItem(VOZ_KEY, vozAuto ? '1' : '0'); } catch (x) {}
             e.currentTarget.setAttribute('aria-pressed', String(vozAuto));
             e.currentTarget.textContent = vozAuto ? '🗣️ Voz automática: ligada' : '🗣️ Voz automática: desligada';
-            if (vozAuto) falar(textoCompleto(ps[i])); else calar();
+            if (vozAuto) falarPausado(ps[i]); else calar();
           } })] : []));
     }
     function tela(...filhos) {
@@ -361,7 +382,7 @@
       const fala = h('div', { class: 'fala', role: 'status', textContent: 'Vamos lá!' });
       const proximo = h('button', { class: 'kprox', type: 'button', hidden: true, textContent: i + 1 < ps.length ? '➡️' : '🏆', 'aria-label': i + 1 < ps.length ? 'Próxima pergunta' : 'Ver resultado',
         onclick: () => { i++; if (i < ps.length) { som('toque'); pergunta(); } else final(); } });
-      const ouvir = temVoz() ? h('button', { class: 'sec', type: 'button', textContent: '🔊 Ouvir a pergunta e as opções', onclick: () => falar(textoCompleto(p)) }) : '';
+      const ouvir = temVoz() ? h('button', { class: 'sec', type: 'button', textContent: '🔊 Ouvir a pergunta e as opções', onclick: () => falarPausado(p) }) : '';
       const botoes = p.op.map((op, k) => ({ op, k })).filter(({ op }) => preenchida(op)).map(({ op, k }) => {
         const b = h('button', { type: 'button', class: 'kop a' + k, 'aria-label': nomeOp(op) },
           ...(op.vis ? [Picto.el(op.vis, 72)] : []), ...(op.txt ? [h('span', { class: 'ktxt', textContent: op.txt })] : []));
@@ -381,12 +402,12 @@
         return b;
       });
       tela(topo(),
-        h('div', { class: 'kmasc' }, h('span', { class: 'masc', textContent: '✏️️', 'aria-hidden': 'true' }, fala)),
+        h('div', { class: 'kmasc' }, h('span', { class: 'masc', textContent: '✏', 'aria-hidden': 'true' }, fala)),
         h('div', { class: 'kfigs' }, ...p.vis.map((id, n) => { const f = Picto.el(id, 96); f.style.animationDelay = `${n * 120}ms`; return f; })),
         ...(p.q.trim() ? [h('h2', { class: 'kq', textContent: p.q })] : []), ouvir,
         h('div', { class: 'kops n' + botoes.length }, ...botoes), proximo);
       som('inicio');
-      calar(); if (vozAuto) setTimeout(() => { if (!o.hidden && i < ps.length && ps[i] === p) falar(textoCompleto(p)); }, 700);
+      calar(); if (vozAuto) setTimeout(() => { if (!o.hidden && i < ps.length && ps[i] === p) falarPausado(p); }, 700);
     }
 
     function final() {
@@ -403,7 +424,5 @@
     pergunta();
   }
 
-  window.Kids = { editar, jogar, normalizar, problema, novoQuiz, deTexto, _teste: { escolher, MODELO } };
-})();
   window.Kids = { editar, jogar, normalizar, problema, novoQuiz, deTexto, _teste: { escolher, MODELO } };
 })();
