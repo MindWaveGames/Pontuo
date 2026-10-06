@@ -1,18 +1,23 @@
 /* ===== Modo Kids: editor e jogo ===== */
-.picto{display:inline-grid;place-items:center;line-height:1;flex:none;border-radius:50%}
+.picto{display:inline-flex;align-items:center;justify-content:center;line-height:1;flex:none;border-radius:50%;text-align:center;
+  font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif}
 .picto.cor{border:3px solid var(--marinho)}
 .picker{border:3px solid var(--marinho);border-radius:20px;padding:16px;max-width:560px;width:94%;color:var(--marinho)}
 .picker::backdrop{background:#17134e99}
 .pabas{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
-.paba{padding:6px 12px;min-height:40px;border-radius:999px;border:2px solid var(--marinho);background:#fff;color:var(--marinho);cursor:pointer;font-weight:700}
-.paba[aria-selected="true"]{background:var(--amarelo)}
-.pgrade{display:grid;grid-template-columns:repeat(auto-fill,minmax(56px,1fr));gap:6px;max-height:50vh;overflow:auto;margin:8px 0}
-.pbtn{display:grid;place-items:center;min-height:56px;border:2px solid #d9d9e8;background:#fff;border-radius:12px;cursor:pointer}
-.pbtn:hover,.pbtn:focus-visible{border-color:var(--roxo-claro);background:#f1ecff}
-.figuras{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0 10px}
-.fig,.figop{display:grid;place-items:center;background:#ffffff26;border:3px solid var(--marinho);border-radius:14px;cursor:pointer;color:#fff;font-size:1.4rem;padding:2px;min-width:52px;min-height:52px}
-.figop{min-width:50px;min-height:50px;flex:none}
+/* Seletores com .picker na frente: a regra genérica "dialog button" do app.css (padding 8px 18px, fundo amarelo)
+   encolhia a área do botão e o emoji vazava para fora, descentralizado. */
+.picker .paba{padding:6px 14px;min-height:40px;border-radius:999px;border:2px solid var(--marinho);background:#fff;color:var(--marinho);cursor:pointer;font:700 .95rem var(--fonte-titulo);box-shadow:none}
+.picker .paba[aria-selected="true"]{background:var(--amarelo)}
+.pgrade{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:8px;max-height:50vh;overflow:auto;margin:8px 0;padding:2px}
+.picker .pbtn{display:flex;align-items:center;justify-content:center;width:100%;height:64px;padding:0;margin:0;border:2px solid #d9d9e8;background:#fff;border-radius:14px;cursor:pointer;box-shadow:none;font:inherit;overflow:hidden}
+.picker .pbtn:hover,.picker .pbtn:focus-visible{border-color:var(--roxo-claro);background:#f1ecff}
+.figuras{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 10px}
+.fig,.figop{display:flex;align-items:center;justify-content:center;background:#ffffff26;border:3px solid var(--marinho);border-radius:14px;cursor:pointer;color:#fff;font-size:1.5rem;line-height:1;padding:0;width:56px;height:56px;flex:none}
 .qcard>input[type=text]{width:100%;margin:2px 0 6px}
+.importar textarea{width:100%;border-radius:12px;border:3px solid var(--marinho);padding:10px;font:inherit;color:var(--marinho);resize:vertical}
+.importar .acoes{margin-top:8px}
+.importmsg{white-space:pre-line;font-size:.9rem;margin:8px 0}
 
 /* jogo */
 .kids{background:var(--violeta);color:#fff}
@@ -54,5 +59,7 @@
 @keyframes estrela{from{transform:scale(0) rotate(-90deg);opacity:0}to{transform:none;opacity:1}}
 .conf{position:fixed;z-index:30;font-size:1.7rem;pointer-events:none;transform:translate(-50%,-50%);animation:conf 1.4s ease-out forwards}
 @keyframes conf{to{transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy) + 140px)) rotate(var(--rot)) scale(1.1);opacity:0}}
-@media(max-width:560px){.kop{min-height:120px}.kq{font-size:1.4rem}.kfigs .picto{width:72px!important;height:72px!important;font-size:58px!important}}
+@media(max-width:560px){.kop{min-height:120px}.kq{font-size:1.4rem}.kfigs .picto{width:72px!important;height:72px!important;font-size:46px!important}}
 @media(prefers-reduced-motion:reduce){.masc,.kprox,.kfigs .picto,.kop.acertou,.kop.errou,.kpontos.pop{animation:none}.kest{transform:none;opacity:1}.kest.on{animation:none}.kest.off{filter:grayscale(1);opacity:.4}}
+.kvoz{min-height:44px}
+.kvoz[aria-pressed="true"]{background:var(--amarelo)}
