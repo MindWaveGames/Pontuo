@@ -46,6 +46,83 @@
     return null;
   }
 
+  // ---------- Importar perguntas de um texto ----------
+  // Formato: blocos separados por linha em branco. 1ª linha = texto e/ou figuras da pergunta; depois 2 a 4 alternativas
+  // (uma por linha, com figura e/ou texto curto). "*" no começo marca a certa. Linhas com # são comentários.
+  const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // sem escapar "-": no modo unicode isso é inválido fora de classes
+  let _fig = null;
+  function figuras() { // mapa "emoji sem seletor de variação" -> id oficial, e a expressão que os encontra
+    if (_fig) return _fig;
+    const mapa = new Map();
+    Picto.grupos.forEach((g) => g.itens.forEach((id) => mapa.set(id.replace(/\uFE0F/g, ''), id)));
+    const chaves = [...mapa.keys()].sort((a, b) => b.length - a.length);
+    return (_fig = { mapa, re: new RegExp(chaves.map(esc).join('|'), 'giu') });
+  }
+  function separar(linha) {
+    const { mapa, re } = figuras(), figs = [];
+    const texto = linha.replace(/\uFE0F/g, '').replace(re, (m) => { const id = mapa.get(m.toLowerCase()) || mapa.get(m); if (id) figs.push(id); return ' '; }).replace(/\s+/g, ' ').trim();
+    return { figs, texto };
+  }
+  function deTexto(txt) {
+    const linhas = String(txt || '').replace(/\r/g, '').split('\n').filter((l) => !l.trim().startsWith('#'));
+    const blocos = linhas.join('\n').split(/\n\s*\n/).map((b) => b.split('\n').map((l) => l.trim()).filter(Boolean)).filter((b) => b.length);
+    const perguntas = [], ignorados = []; let cortados = 0;
+    blocos.forEach((b, n) => {
+      const ign = (motivo) => ignorados.push({ n: n + 1, inicio: b[0].slice(0, 28), motivo });
+      if (b.length < 3) return ign('precisa de uma pergunta e pelo menos 2 alternativas');
+      const q = separar(b[0]);
+      if (!q.texto && !q.figs.length) return ign('a pergunta está vazia');
+      const ops = b.slice(1, 5).map((l) => {
+        let t = l, certa = false;
+        if (t.startsWith('*')) { certa = true; t = t.slice(1).trim(); }
+        t = t.replace(/^(?:[A-Da-d][).:]|[1-4][).])\s*/, '');
+        if (t.startsWith('*')) { certa = true; t = t.slice(1).trim(); }
+        const x = separar(t);
+        if (x.texto.length > 20) cortados++;
+        return { certa, vis: x.figs[0] || '', txt: x.texto.slice(0, 20) };
+      });
+      const c = ops.findIndex((o) => o.certa);
+      if (c < 0) return ign('faltou marcar a alternativa certa com *');
+      if (ops.filter((o) => o.vis || o.txt).length < 2 || !(ops[c].vis || ops[c].txt)) return ign('as alternativas estão vazias');
+      while (ops.length < 4) ops.push({ vis: '', txt: '' });
+      perguntas.push({ q: q.texto.slice(0, 100), vis: q.figs.slice(0, 5), op: ops.map((o) => ({ vis: o.vis, txt: o.txt })), c });
+    });
+    return { perguntas, ignorados, cortados };
+  }
+  const MODELO = [
+    '# Modelo de importação: Atividade Kids',
+    '# Cada pergunta é um bloco; separe os blocos com uma linha em branco.',
+    '# 1ª linha: texto da pergunta e/ou figuras (cole emojis da lista do editor, até 5).',
+    '# Depois, de 2 a 4 alternativas, uma por linha. Marque a certa com * no começo.',
+    '# Cada alternativa pode ter 1 figura e/ou um texto curto (até 20 letras).',
+    '# Linhas que começam com # são ignoradas. Pode usar A) B) C) D) antes das alternativas.',
+    '',
+    'Qual animal faz miau? 🐱',
+    'A) 🐶 cachorro',
+    '*B) 🐱 gato',
+    'C) 🐮 vaca',
+    '',
+    '🍎🍎 + 🍎 = ?',
+    'A) 2',
+    '*B) 3',
+    'C) 4',
+    '',
+    'Qual é a cor do céu?',
+    'A) cor-verde',
+    '*B) cor-azul',
+    'C) cor-vermelho',
+    'D) cor-amarelo',
+    '',
+    'Quem voa? 🦆',
+    '*🐦 passarinho',
+    '🐘 elefante',
+    '🐢 tartaruga',
+  ].join('\n');
+  const baixar = (nome, texto, tipo) => {
+    const a = h('a', { href: URL.createObjectURL(new Blob([texto], { type: tipo })), download: nome });
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
   // ---------- Escolha de figura (janela com abas por categoria) ----------
   function escolher(aoEscolher, { podeLimpar = false } = {}) {
     const dlg = h('dialog', { class: 'picker' });
@@ -104,6 +181,30 @@
       cont.textContent = `${z.perguntas.length} pergunta(s)`;
     }
 
+    const colar = h('textarea', { rows: 8, placeholder: 'Qual animal faz miau? 🐱\nA) 🐶 cachorro\n*B) 🐱 gato\nC) 🐮 vaca\n\n🍎🍎 + 🍎 = ?\nA) 2\n*B) 3\nC) 4', 'aria-label': 'Perguntas para importar' });
+    const importMsg = h('p', { class: 'importmsg', role: 'status' });
+    const arq = h('input', { type: 'file', accept: '.txt,text/plain', hidden: true, onchange: async () => {
+      const f = arq.files[0]; if (!f) return;
+      if (f.size > 200000) { importMsg.textContent = 'Arquivo grande demais (máximo 200 KB).'; return; }
+      colar.value = await f.text(); importMsg.textContent = 'Arquivo carregado. Confira o texto e clique em "Adicionar ao quizz".'; arq.value = '';
+    } });
+    const vazio = (p) => !p.q.trim() && !p.vis.length && p.op.every((o) => !o.vis && !o.txt.trim());
+    function adicionar() {
+      const r = deTexto(colar.value);
+      const linhas = [];
+      if (!r.perguntas.length) linhas.push('Nenhuma pergunta válida no texto. Baixe o modelo para ver o formato.');
+      else {
+        if (z.perguntas.length && z.perguntas.every(vazio)) z.perguntas = []; // a pergunta em branco do início sai
+        const cabem = MAXQ - z.perguntas.length, novas = r.perguntas.slice(0, Math.max(0, cabem));
+        z.perguntas.push(...novas); colar.value = ''; salvar(); desenhar();
+        linhas.push(`${novas.length} pergunta(s) adicionada(s).`);
+        if (novas.length < r.perguntas.length) linhas.push(`Limite de ${MAXQ} perguntas: ${r.perguntas.length - novas.length} ficaram de fora.`);
+      }
+      r.ignorados.slice(0, 5).forEach((g) => linhas.push(`Bloco ${g.n} ("${g.inicio}"): ${g.motivo}.`));
+      if (r.ignorados.length > 5) linhas.push(`...e mais ${r.ignorados.length - 5} bloco(s) ignorado(s).`);
+      if (r.cortados) linhas.push(`${r.cortados} texto(s) de alternativa foram cortados em 20 letras.`);
+      importMsg.textContent = linhas.join('\n');
+    }
     const titulo = h('input', { type: 'text', maxLength: 60, value: z.titulo, 'aria-label': 'Título da atividade', oninput: () => { z.titulo = titulo.value; salvar(); } });
     el.replaceChildren(
       h('p', { class: 'vazio', textContent: '🧸 Atividade Kids: o professor conduz com as crianças, sem alunos conectados. Pergunte em voz alta e toque na resposta que a turma escolher.' }),
@@ -112,6 +213,14 @@
         if (z.perguntas.length >= MAXQ) { msg.textContent = `Limite de ${MAXQ} perguntas.`; return; }
         z.perguntas.push(vazia()); salvar(); desenhar();
       } })),
+      h('details', { class: 'trocar importar' }, h('summary', { textContent: 'Importar perguntas (colar texto ou arquivo .txt)' }),
+        h('p', { class: 'vazio', textContent: 'Cole várias perguntas de uma vez. Figuras: cole os emojis direto (🐱 🍎 ⭐...), só as da lista do editor são aceitas. Marque a certa com *. Baixe o modelo para ver o formato.' }),
+        colar,
+        h('div', { class: 'acoes' },
+          h('button', { class: 'sec', type: 'button', textContent: '📄 Carregar arquivo .txt', onclick: () => arq.click() }), arq,
+          h('button', { class: 'sec', type: 'button', textContent: '⬇️ Baixar modelo', onclick: () => baixar('modelo-kids.txt', MODELO, 'text/plain') }),
+          h('button', { class: 'grande', type: 'button', textContent: 'Adicionar ao quizz', onclick: adicionar })),
+        importMsg),
       h('div', { class: 'acoes' },
         h('button', { class: 'grande', type: 'button', textContent: 'Jogar', onclick: async () => {
           const pr = problema(z);
@@ -120,6 +229,7 @@
           if (!(await salvarJa())) { msg.textContent = 'Não foi possível salvar. Verifique a internet.'; return; }
           msg.textContent = (await ctx.jogar(z)) || '';
         } }),
+        h('button', { class: 'sec', type: 'button', textContent: 'Exportar arquivo', onclick: () => baixar((z.titulo || 'atividade').replace(/[^\w-]+/g, '_') + '.json', JSON.stringify({ tipo: 'kids', titulo: z.titulo, perguntas: z.perguntas }, null, 1), 'application/json') }),
         h('button', { class: 'sec', type: 'button', textContent: 'Voltar', onclick: async () => { await salvarJa(); ctx.voltar(); } })),
       msg);
     desenhar();
@@ -140,10 +250,33 @@
       document.body.append(s); setTimeout(() => s.remove(), 1700);
     }
   }
+  // Leitura em voz alta (voz do próprio navegador, sem internet extra). Ajuda crianças que ainda não leem e leitores de tela.
+  const VOZ_KEY = 'pontuo_kids_voz';
+  let vozAuto = false;
+  try { vozAuto = localStorage.getItem(VOZ_KEY) === '1'; } catch (e) {}
+  const temVoz = () => !!(window.speechSynthesis && window.SpeechSynthesisUtterance);
   const falar = (texto) => {
-    if (!window.speechSynthesis || !texto) return;
-    try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(texto); u.lang = 'pt-BR'; u.rate = 0.9; speechSynthesis.speak(u); } catch (e) { /* sem voz disponível */ }
+    if (!temVoz() || !texto) return;
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(texto);
+      u.lang = 'pt-BR'; u.rate = 0.9;
+      const voz = (speechSynthesis.getVoices ? speechSynthesis.getVoices() : []).find((v) => /^pt/i.test(v.lang));
+      if (voz) u.voice = voz;
+      speechSynthesis.speak(u);
+    } catch (e) { /* sem voz disponível */ }
   };
+  const calar = () => { try { if (temVoz()) speechSynthesis.cancel(); } catch (e) {} };
+  const nomeOp = (op) => (op.txt.trim() || Picto.nome(op.vis));
+  // Texto lido: pergunta, figuras e todas as alternativas ("Alternativa A: cachorro. Alternativa B: gato.").
+  function textoCompleto(p) {
+    const partes = [];
+    if (p.q.trim()) partes.push(p.q.trim());
+    if (p.vis.length) partes.push((p.q.trim() ? 'Figuras: ' : 'Olhe as figuras: ') + p.vis.map((id) => Picto.nome(id)).join(', '));
+    const ops = p.op.map((op, k) => ({ op, k })).filter(({ op }) => preenchida(op));
+    partes.push('Escolha. ' + ops.map(({ op, k }) => `Alternativa ${LET[k]}: ${nomeOp(op)}`).join('. '));
+    return partes.join('. ');
+  }
 
   function jogar(z) {
     const ps = z.perguntas, ganhou = ps.map(() => false);
@@ -151,13 +284,21 @@
     let o = document.getElementById('kids');
     if (!o) { o = h('div', { id: 'kids', class: 'jogo kids' }); document.body.append(o); }
     o.hidden = false;
-    const sair = () => { try { speechSynthesis && speechSynthesis.cancel(); } catch (e) {} o.hidden = true; o.replaceChildren(); };
+    const sair = () => { calar(); o.hidden = true; o.replaceChildren(); };
     const estrelas = () => ganhou.filter(Boolean).length;
 
     function topo() {
       return h('div', { class: 'ktopo' },
         h('div', { class: 'kpontos', 'aria-label': `${estrelas()} estrelas` }, h('span', { textContent: '⭐' }), h('b', { class: 'kn', textContent: estrelas() })),
-        h('div', { class: 'kprog', 'aria-hidden': 'true' }, ...ps.map((_, n) => h('i', { class: n < i ? 'feito' : n === i ? 'atual' : '' }))));
+        h('div', { class: 'kprog', 'aria-hidden': 'true' }, ...ps.map((_, n) => h('i', { class: n < i ? 'feito' : n === i ? 'atual' : '' }))),
+        ...(temVoz() ? [h('button', { class: 'sec mini kvoz', type: 'button', 'aria-pressed': String(vozAuto),
+          textContent: vozAuto ? '🗣️ Voz automática: ligada' : '🗣️ Voz automática: desligada',
+          onclick: (e) => {
+            vozAuto = !vozAuto; try { localStorage.setItem(VOZ_KEY, vozAuto ? '1' : '0'); } catch (x) {}
+            e.currentTarget.setAttribute('aria-pressed', String(vozAuto));
+            e.currentTarget.textContent = vozAuto ? '🗣️ Voz automática: ligada' : '🗣️ Voz automática: desligada';
+            if (vozAuto) falar(textoCompleto(ps[i])); else calar();
+          } })] : []));
     }
     function tela(...filhos) {
       o.replaceChildren(h('button', { class: 'sair', type: 'button', textContent: 'Sair', onclick: sair }),
@@ -169,9 +310,9 @@
       const fala = h('div', { class: 'fala', role: 'status', textContent: 'Vamos lá!' });
       const proximo = h('button', { class: 'kprox', type: 'button', hidden: true, textContent: i + 1 < ps.length ? '➡️' : '🏆', 'aria-label': i + 1 < ps.length ? 'Próxima pergunta' : 'Ver resultado',
         onclick: () => { i++; if (i < ps.length) { som('toque'); pergunta(); } else final(); } });
-      const ouvir = p.q.trim() && window.speechSynthesis ? h('button', { class: 'sec', type: 'button', textContent: '🔊 Ouvir a pergunta', onclick: () => falar(p.q) }) : '';
+      const ouvir = temVoz() ? h('button', { class: 'sec', type: 'button', textContent: '🔊 Ouvir a pergunta e as opções', onclick: () => falar(textoCompleto(p)) }) : '';
       const botoes = p.op.map((op, k) => ({ op, k })).filter(({ op }) => preenchida(op)).map(({ op, k }) => {
-        const b = h('button', { type: 'button', class: 'kop a' + k, 'aria-label': (op.txt || Picto.nome(op.vis)) },
+        const b = h('button', { type: 'button', class: 'kop a' + k, 'aria-label': nomeOp(op) },
           ...(op.vis ? [Picto.el(op.vis, 72)] : []), ...(op.txt ? [h('span', { class: 'ktxt', textContent: op.txt })] : []));
         b.addEventListener('click', () => {
           if (travado) return;
@@ -179,9 +320,11 @@
             travado = true; b.classList.add('acertou'); confete(b); som('acerto');
             if (!erros) { ganhou[i] = true; const n = o.querySelector('.kn'); if (n) { n.textContent = estrelas(); n.parentElement.classList.remove('pop'); void n.parentElement.offsetWidth; n.parentElement.classList.add('pop'); } }
             fala.textContent = sorteia(FALAS_OK); fala.className = 'fala ok'; proximo.hidden = false; proximo.focus();
+            if (vozAuto) falar(fala.textContent);
           } else {
             erros++; b.classList.add('errou'); b.disabled = true; som('erro');
             fala.textContent = sorteia(FALAS_ERRO); fala.className = 'fala tente';
+            if (vozAuto) falar(fala.textContent);
           }
         });
         return b;
@@ -192,6 +335,7 @@
         ...(p.q.trim() ? [h('h2', { class: 'kq', textContent: p.q })] : []), ouvir,
         h('div', { class: 'kops n' + botoes.length }, ...botoes), proximo);
       som('inicio');
+      calar(); if (vozAuto) setTimeout(() => { if (!o.hidden && i < ps.length && ps[i] === p) falar(textoCompleto(p)); }, 700);
     }
 
     function final() {
@@ -202,10 +346,11 @@
         h('div', { class: 'acoes' }, h('button', { class: 'grande', type: 'button', textContent: '🔁 Jogar de novo', onclick: () => { ganhou.fill(false); i = 0; pergunta(); } }),
           h('button', { class: 'sec', type: 'button', textContent: 'Sair', onclick: sair })));
       som('vitoria');
+      if (vozAuto) falar(`Você ganhou ${n} de ${total} estrelas!`);
       [...linha.children].forEach((s, k) => setTimeout(() => { s.classList.add('on'); if (ganhou[k]) som('estrela', k); if (k === 0 || k === total - 1) confete(s); }, 400 + k * 350));
     }
     pergunta();
   }
 
-  window.Kids = { editar, jogar, normalizar, problema, novoQuiz, _teste: { escolher } };
+  window.Kids = { editar, jogar, normalizar, problema, novoQuiz, deTexto, _teste: { escolher, MODELO } };
 })();
