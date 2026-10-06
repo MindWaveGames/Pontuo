@@ -254,25 +254,50 @@
   const VOZ_KEY = 'pontuo_kids_voz';
   let vozAuto = false;
   try { vozAuto = localStorage.getItem(VOZ_KEY) === '1'; } catch (e) {}
+  
   const temVoz = () => !!(window.speechSynthesis && window.SpeechSynthesisUtterance);
+  
+  let listaVozes = [];
+  const carregarVozes = () => {
+    if (!window.speechSynthesis) return;
+    listaVozes = speechSynthesis.getVoices();
+  };
+
+  if (window.speechSynthesis) {
+    carregarVozes();
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+      speechSynthesis.onvoiceschanged = carregarVozes;
+    }
+  }
+
   const falar = (texto) => {
     if (!temVoz() || !texto) return;
     try {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(texto);
       u.lang = 'pt-BR'; 
-      u.rate = 0.95; // Um pouco mais natural que 0.9 (ajuste entre 0.9 e 1.0)
-      u.pitch = 1.05; // Levemente mais agudo, o que costuma soar mais amigável para crianças
-      const voices = speechSynthesis.getVoices ? speechSynthesis.getVoices() : [];
-      // Tenta encontrar a melhor voz em pt-BR (priorizando Google, Microsoft ou termos "natural")
-      const voz = voices.find(v => /pt-BR|pt_BR/i.test(v.lang) && /google|microsoft|natural|online/i.test(v.name)) ||
-                  voices.find(v => /^pt/i.test(v.lang));
-      if (voz) u.voice = voz;
+      u.rate = 0.95; // Velocidade levemente reduzida para clareza
+      u.pitch = 1.05; // Tom levemente mais amigável/infantil
+
+      if (listaVozes.length === 0) {
+        listaVozes = speechSynthesis.getVoices();
+      }
+
+      // Tenta encontrar a melhor voz em pt-BR (priorizando Google, Microsoft, Natural ou Online)
+      const voz = listaVozes.find(v => /pt-BR|pt_BR/i.test(v.lang) && /google|microsoft|natural|online/i.test(v.name)) ||
+                  listaVozes.find(v => /^pt/i.test(v.lang));
+
+      if (voz) {
+        u.voice = voz;
+      }
+
       speechSynthesis.speak(u);
     } catch (e) { /* sem voz disponível */ }
   };
+
   const calar = () => { try { if (temVoz()) speechSynthesis.cancel(); } catch (e) {} };
   const nomeOp = (op) => (op.txt.trim() || Picto.nome(op.vis));
+  
   // Texto lido: pergunta, figuras e todas as alternativas ("Alternativa A: cachorro. Alternativa B: gato.").
   function textoCompleto(p) {
     const partes = [];
