@@ -260,8 +260,13 @@
     try {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(texto);
-      u.lang = 'pt-BR'; u.rate = 0.9;
-      const voz = (speechSynthesis.getVoices ? speechSynthesis.getVoices() : []).find((v) => /^pt/i.test(v.lang));
+      u.lang = 'pt-BR'; 
+      u.rate = 0.95; // Um pouco mais natural que 0.9 (ajuste entre 0.9 e 1.0)
+      u.pitch = 1.05; // Levemente mais agudo, o que costuma soar mais amigável para crianças
+      const voices = speechSynthesis.getVoices ? speechSynthesis.getVoices() : [];
+      // Tenta encontrar a melhor voz em pt-BR (priorizando Google, Microsoft ou termos "natural")
+      const voz = voices.find(v => /pt-BR|pt_BR/i.test(v.lang) && /google|microsoft|natural|online/i.test(v.name)) ||
+                  voices.find(v => /^pt/i.test(v.lang));
       if (voz) u.voice = voz;
       speechSynthesis.speak(u);
     } catch (e) { /* sem voz disponível */ }
