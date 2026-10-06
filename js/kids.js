@@ -250,7 +250,7 @@
       document.body.append(s); setTimeout(() => s.remove(), 1700);
     }
   }
-  // Leitura em voz alta otimizada para clareza e calmaria
+  // Leitura em voz alta (voz do próprio navegador, sem internet extra). Ajuda crianças que ainda não leem e leitores de tela.
   const VOZ_KEY = 'pontuo_kids_voz';
   let vozAuto = false;
   try { vozAuto = localStorage.getItem(VOZ_KEY) === '1'; } catch (e) {}
@@ -284,7 +284,7 @@
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(texto);
       u.lang = 'pt-BR'; 
-      u.rate = 0.88; // Bem mais calmo e pausado para crianças entenderem perfeitamente
+      u.rate = 0.85; // Velocidade bem calma para dar tempo de absorção
       u.pitch = 1.05; 
 
       if (!vozFemPt && listaVozes.length === 0) {
@@ -296,40 +296,37 @@
       }
 
       speechSynthesis.speak(u);
-    } catch (e) {}
+    } catch (e) { /* sem voz disponível */ }
   };
 
   const calar = () => { try { if (temVoz()) speechSynthesis.cancel(); } catch (e) {} };
   const nomeOp = (op) => (op.txt.trim() || Picto.nome(op.vis));
   
-  // Texto lido com pausas calibradas para soar calmo e humano
+  // Texto lido com pausas fortes para o leitor não emendar as palavras
   function textoCompleto(p) {
     const partes = [];
     
-    // Pergunta principal com entoação clara
     if (p.q.trim()) {
       partes.push(p.q.trim());
     }
     
-    // Se houver figuras visuais principais
     if (p.vis.length) {
-      partes.push('Olhe as figuras: ' + p.vis.map((id) => Picto.nome(id)).join(', '));
+      partes.push('Figuras: ' + p.vis.map((id) => Picto.nome(id)).join(', '));
     }
     
-    // Alternativas estruturadas pausadamente (ex: "Alternativa A... B. Alternativa B... E.")
     const ops = p.op.map((op, k) => ({ op, k })).filter(({ op }) => preenchida(op));
     if (ops.length > 0) {
+      // Adiciona uma quebra bem nítida entre as alternativas usando pontos seguidos de espaços longos
       const textoOps = ops.map(({ op, k }) => {
-        const nomeOpLido = nomeOp(op);
-        // Adiciona um espaço ou letra soletrada se for muito curta para o robô não engolir (ex: letra B vira "a letra B")
-        const itemLido = nomeOpLido.length === 1 ? `letra ${nomeOpLido}` : nomeOpLido;
-        return `Alternativa ${LET[k]}. ${itemLido}`;
-      }).join('. ');
+        const item = nomeOp(op);
+        return `Alternativa ${LET[k]}... ${item}`;
+      }).join('.   '); // Múltiplos espaços forçam o motor de fala a respirar
       
-      partes.push('Escolha. ' + textoOps);
+      partes.push('Escolha.   ' + textoOps);
     }
     
-    return partes.join('. ');
+    // Une tudo com pontos duplos para o sintetizador não atropelar os termos
+    return partes.join('.   ');
   }
 
   function jogar(z) {
@@ -384,7 +381,7 @@
         return b;
       });
       tela(topo(),
-        h('div', { class: 'kmasc' }, h('span', { class: 'masc', textContent: '✏️️', 'aria-hidden': 'true' }), fala),
+        h('div', { class: 'kmasc' }, h('span', { class: 'masc', textContent: '✏️️', 'aria-hidden': 'true' }, fala)),
         h('div', { class: 'kfigs' }, ...p.vis.map((id, n) => { const f = Picto.el(id, 96); f.style.animationDelay = `${n * 120}ms`; return f; })),
         ...(p.q.trim() ? [h('h2', { class: 'kq', textContent: p.q })] : []), ouvir,
         h('div', { class: 'kops n' + botoes.length }, ...botoes), proximo);
@@ -406,5 +403,7 @@
     pergunta();
   }
 
+  window.Kids = { editar, jogar, normalizar, problema, novoQuiz, deTexto, _teste: { escolher, MODELO } };
+})();
   window.Kids = { editar, jogar, normalizar, problema, novoQuiz, deTexto, _teste: { escolher, MODELO } };
 })();
