@@ -10,11 +10,13 @@
     const s = document.createElement('span');
     s.className = 'picto';
     s.setAttribute('aria-hidden', 'true');
-    s.style.cssText = `width:${tam}px;height:${tam}px;font-size:${Math.round(tam * 0.8)}px`;
+    s.style.cssText = `width:${tam}px;height:${tam}px;font-size:${Math.round(tam * 0.62)}px`;
     if (id && id.startsWith('cor-') && CORES[id.slice(4)]) { s.classList.add('cor'); s.style.background = CORES[id.slice(4)]; }
     else if (TODOS.has(id)) s.textContent = id;
     return s;
   }
-  const nome = (id) => (id && id.startsWith('cor-') ? 'cor ' + id.slice(4) : id || '');
+  // Nome em português de cada figura: usado por leitores de tela e pela leitura em voz alta do modo Kids.
+  const NOMES = {"🐶": "cachorro", "🐱": "gato", "🐭": "rato", "🐰": "coelho", "🦊": "raposa", "🐻": "urso", "🐼": "panda", "🐨": "coala", "🐯": "tigre", "🦁": "leão", "🐮": "vaca", "🐷": "porco", "🐸": "sapo", "🐵": "macaco", "🐔": "galinha", "🐧": "pinguim", "🐦": "passarinho", "🦆": "pato", "🦉": "coruja", "🦋": "borboleta", "🐢": "tartaruga", "🐟": "peixe", "🐙": "polvo", "🐘": "elefante", "🦒": "girafa", "🦓": "zebra", "🐴": "cavalo", "🐝": "abelha", "🐞": "joaninha", "🐌": "caracol", "🍎": "maçã", "🍌": "banana", "🍇": "uva", "🍓": "morango", "🍉": "melancia", "🍊": "laranja", "🍋": "limão", "🍐": "pera", "🍒": "cereja", "🍍": "abacaxi", "🥕": "cenoura", "🌽": "milho", "🍞": "pão", "🧀": "queijo", "🍕": "pizza", "🍦": "sorvete", "☀️": "sol", "🌙": "lua", "⭐": "estrela", "🌈": "arco-íris", "☁️": "nuvem", "🌧️": "chuva", "🌸": "flor", "🌳": "árvore", "🌻": "girassol", "🔥": "fogo", "💧": "gota d'água", "⚽": "bola", "🚗": "carro", "🚌": "ônibus", "🚲": "bicicleta", "✈️": "avião", "🚀": "foguete", "🏠": "casa", "🎈": "balão", "🎁": "presente", "📚": "livros", "✏️": "lápis", "🔔": "sino", "🎵": "música", "🎨": "tinta", "🧸": "ursinho", "👑": "coroa", "0️⃣": "zero", "1️⃣": "um", "2️⃣": "dois", "3️⃣": "três", "4️⃣": "quatro", "5️⃣": "cinco", "6️⃣": "seis", "7️⃣": "sete", "8️⃣": "oito", "9️⃣": "nove", "🔟": "dez", "➕": "mais", "➖": "menos", "❓": "interrogação", "✅": "certo", "❌": "errado", "❤️": "coração", "cor-vermelho": "vermelho", "cor-laranja": "laranja", "cor-amarelo": "amarelo", "cor-verde": "verde", "cor-azul": "azul", "cor-roxo": "roxo", "cor-rosa": "rosa", "cor-marrom": "marrom", "cor-preto": "preto", "cor-branco": "branco", "⭕": "círculo", "🔺": "triângulo", "🔷": "losango azul", "⬛": "quadrado preto", "⬜": "quadrado branco", "🔶": "losango laranja"};
+  const nome = (id) => NOMES[id] || id || '';
   window.Picto = { grupos: GRUPOS, valido: (id) => TODOS.has(id), el, nome };
 })();
