@@ -237,8 +237,8 @@
   }
 
   // ---------- Jogo (conduzido pelo professor) ----------
-  const FALAS_OK = ['Muito bem!', 'Parabéns!', 'Isso mesmo!', 'Você acertou!', 'Que demais!'];
-  const FALAS_ERRO = ['Quase! Tente de novo.', 'Ops! Vamos tentar outra vez?', 'Tente de novo, você consegue!'];
+  const FALAS_OK = ['Muito bem!', 'Parabéns!', 'Isso mesmo!', 'Você acertou!', 'Que demais!', 'Mandou bem!', 'Isso aí!', 'Excelente!'];
+  const FALAS_ERRO = ['Quase! Tente de novo.', 'Ops! Vamos tentar outra vez?', 'Tente de novo, você consegue!', 'Não foi dessa vez. Escolha outra opção!'];
   const sorteia = (l) => l[Math.floor(Math.random() * l.length)];
 
   function confete(origem) {
@@ -250,32 +250,111 @@
       document.body.append(s); setTimeout(() => s.remove(), 1700);
     }
   }
-  // Leitura em voz alta (voz do próprio navegador, sem internet extra). Ajuda crianças que ainda não leem e leitores de tela.
-  const VOZ_KEY = 'pontuo_kids_voz';
-  let vozAuto = false;
-  try { vozAuto = localStorage.getItem(VOZ_KEY) === '1'; } catch (e) {}
+  // ---------- Leitura em voz alta mais natural ----------
+  // Usa a voz do próprio aparelho. O que a deixa mais humana aqui: escolher a melhor voz em português (as "naturais"),
+  // falar em frases curtas com pausas, dizer a cor de cada botão em vez de "alternativa A", destacar a opção que está
+  // sendo lida, ler contas como gente (2+3 = "2 mais 3") e dar entusiasmo nos incentivos.
+  const KEY = { auto: 'pontuo_kids_voz', nome: 'pontuo_kids_voz_nome', vel: 'pontuo_kids_voz_vel' };
+  const lerLS = (k, padrao = '') => { try { const v = localStorage.getItem(k); return v === null ? padrao : v; } catch (e) { return padrao; } };
+  const gravarLS = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  let vozAuto = lerLS(KEY.auto) === '1';
   const temVoz = () => !!(window.speechSynthesis && window.SpeechSynthesisUtterance);
-  const falar = (texto) => {
-    if (!temVoz() || !texto) return;
-    try {
-      speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(texto);
-      u.lang = 'pt-BR'; u.rate = 0.9;
-      const voz = (speechSynthesis.getVoices ? speechSynthesis.getVoices() : []).find((v) => /^pt/i.test(v.lang));
-      if (voz) u.voice = voz;
-      speechSynthesis.speak(u);
-    } catch (e) { /* sem voz disponível */ }
-  };
-  const calar = () => { try { if (temVoz()) speechSynthesis.cancel(); } catch (e) {} };
+  const COR_OP = ['vermelha', 'azul', 'amarela', 'verde']; // cor do botão de cada alternativa
+  let seq = 0; // cada leitura tem um número: calar ou trocar de pergunta invalida as pendentes
+
+  function notaVoz(v) {
+    const nome = `${v.name} ${v.lang}`;
+    let n;
+    if (/^pt[-_]br/i.test(v.lang)) n = 100; else if (/^pt/i.test(v.lang)) n = 50; else return -1;
+    if (/natural|neural|online/i.test(nome)) n += 40;
+    if (/google/i.test(nome)) n += 25;
+    if (/premium|enhanced|aprimorad|siri/i.test(nome)) n += 30;
+    if (/compact|compacta/i.test(nome)) n -= 10;
+    return n;
+  }
+  const vozesPt = () => (speechSynthesis.getVoices ? speechSynthesis.getVoices() : []).filter((v) => notaVoz(v) >= 0).sort((a, b) => notaVoz(b) - notaVoz(a));
+  function vozEscolhida() { const l = vozesPt(), salva = lerLS(KEY.nome); return l.find((v) => v.name === salva) || l[0] || null; }
+  const velocidade = () => { const v = parseFloat(lerLS(KEY.vel, '0.9')); return v >= 0.6 && v <= 1.3 ? v : 0.9; };
+  // Símbolos viram palavras: "2+3=?" -> "2 mais 3 igual a ?"
+  const paraFala = (t) => String(t)
+    .replace(/(\d)\s*[-–]\s*(?=\d)/g, '$1 menos ').replace(/(\d)\s*[x×*]\s*(?=\d)/gi, '$1 vezes ')
+    .replace(/\+/g, ' mais ').replace(/÷/g, ' dividido por ').replace(/=/g, ' igual a ').replace(/%/g, ' por cento ').replace(/\s+/g, ' ').trim();
   const nomeOp = (op) => (op.txt.trim() || Picto.nome(op.vis));
-  // Texto lido: pergunta, figuras e todas as alternativas ("Alternativa A: cachorro. Alternativa B: gato.").
-  function textoCompleto(p) {
-    const partes = [];
-    if (p.q.trim()) partes.push(p.q.trim());
-    if (p.vis.length) partes.push((p.q.trim() ? 'Figuras: ' : 'Olhe as figuras: ') + p.vis.map((id) => Picto.nome(id)).join(', '));
-    const ops = p.op.map((op, k) => ({ op, k })).filter(({ op }) => preenchida(op));
-    partes.push('Escolha. ' + ops.map(({ op, k }) => `Alternativa ${LET[k]}: ${nomeOp(op)}`).join('. '));
-    return partes.join('. ');
+
+  const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
+  function falando(ligado) {
+    const m = document.querySelector('#kids .masc'); if (m) m.classList.toggle('falando', ligado);
+    if (!ligado) document.querySelectorAll('#kids .kop.lendo').forEach((e) => e.classList.remove('lendo'));
+  }
+  // Fala uma frase e avisa quando termina (alguns navegadores não avisam: há um tempo máximo de segurança).
+  function dizer(texto, { rate, pitch = 1 } = {}) {
+    return new Promise((ok) => {
+      if (!temVoz() || !String(texto).trim()) return ok();
+      const u = new SpeechSynthesisUtterance(paraFala(texto));
+      u.lang = 'pt-BR'; u.rate = rate || velocidade(); u.pitch = pitch;
+      const v = vozEscolhida(); if (v) { u.voice = v; u.lang = v.lang; }
+      let feito = false, t;
+      const fim = () => { if (!feito) { feito = true; clearTimeout(t); ok(); } };
+      u.onend = fim; u.onerror = fim;
+      t = setTimeout(fim, Math.max(2500, String(texto).length * 110) + 1500);
+      try { speechSynthesis.speak(u); } catch (e) { fim(); }
+    });
+  }
+  function calar() { seq++; try { if (temVoz()) speechSynthesis.cancel(); } catch (e) {} falando(false); }
+  // Frase solta (incentivos, resultado): interrompe o que estiver sendo lido.
+  function falar(texto, opcoes) { if (!temVoz() || !texto) return; calar(); const id = seq; falando(true); dizer(texto, opcoes).then(() => { if (id === seq) falando(false); }); }
+  const ANIMADO = { pitch: 1.15, rate: 1.0 }; // incentivos soam mais alegres
+
+  // Lê a pergunta, as figuras e cada opção, destacando o botão que está sendo lido.
+  async function lerPergunta(p, lista) {
+    if (!temVoz()) return;
+    calar(); const id = seq;
+    const passos = [];
+    if (p.q.trim()) passos.push({ t: p.q.trim() });
+    if (p.vis.length) passos.push({ t: (p.vis.length > 1 ? 'Veja as figuras: ' : 'Veja a figura: ') + p.vis.map((f) => Picto.nome(f)).join(', ') + '.' });
+    passos.push({ t: 'Escolha uma opção.' });
+    lista.forEach(({ k, b }) => passos.push({ t: `${COR_OP[k]}: ${nomeOp(p.op[k])}.`, el: b }));
+    falando(true);
+    for (const passo of passos) {
+      if (id !== seq) return;
+      if (passo.el) passo.el.classList.add('lendo');
+      await dizer(passo.t);
+      if (passo.el) passo.el.classList.remove('lendo');
+      if (id !== seq) return;
+      await pausa(passo.el ? 200 : 350);
+    }
+    if (id === seq) falando(false);
+  }
+
+  // Janela de ajustes da voz (escolha da voz, velocidade e teste). Vale só para este aparelho.
+  function configVoz() {
+    const dlg = h('dialog', { class: 'kcfg' });
+    const sel = h('select', { 'aria-label': 'Voz de leitura' }), aviso = h('p', { class: 'vazio' });
+    const vel = h('select', { 'aria-label': 'Velocidade da fala' }, ...[['Devagar', 0.75], ['Normal', 0.9], ['Rápida', 1.05]].map(([n, v]) =>
+      h('option', { value: v, textContent: n, selected: Math.abs(velocidade() - v) < 0.01 })));
+    const preencher = () => {
+      const l = vozesPt(), atual = vozEscolhida();
+      sel.replaceChildren(...l.map((v) => h('option', { value: v.name, textContent: `${v.name} (${v.lang})`, selected: !!atual && v.name === atual.name })));
+      sel.disabled = !l.length;
+      aviso.textContent = l.length ? '' : 'Este aparelho não tem voz em português instalada. Instale uma nas configurações de voz do sistema.';
+    };
+    preencher();
+    const ouvirMudar = () => preencher();
+    try { speechSynthesis.addEventListener('voiceschanged', ouvirMudar); } catch (e) {}
+    sel.addEventListener('change', () => gravarLS(KEY.nome, sel.value));
+    vel.addEventListener('change', () => gravarLS(KEY.vel, vel.value));
+    const fechar = h('button', { type: 'button', class: 'sec', textContent: 'Fechar', onclick: () => dlg.close() });
+    dlg.append(h('h3', { textContent: 'Voz de leitura' }),
+      h('label', {}, 'Voz', sel), h('label', {}, 'Velocidade', vel), aviso,
+      h('button', { type: 'button', class: 'sec', textContent: '▶ Testar a voz', onclick: () => falar('Olá! Eu sou o lápis do Pontuô. Vamos aprender brincando?', ANIMADO) }),
+      h('details', { class: 'dicas' }, h('summary', { textContent: 'Como deixar a voz mais natural' }),
+        h('ul', {},
+          h('li', { textContent: 'Computador com Windows: use o Microsoft Edge. Ele tem vozes "Natural" em português (como Francisca e Antonio), bem mais humanas.' }),
+          h('li', { textContent: 'Android: o Chrome usa a voz "Google português do Brasil".' }),
+          h('li', { textContent: 'iPhone e iPad: Ajustes > Acessibilidade > Conteúdo Falado > Vozes > Português (Brasil) e baixe a versão "Aprimorada".' }))),
+      h('div', { class: 'acoes' }, fechar));
+    dlg.addEventListener('close', () => { try { speechSynthesis.removeEventListener('voiceschanged', ouvirMudar); } catch (e) {} calar(); dlg.remove(); });
+    document.body.append(dlg); dlg.showModal();
   }
 
   function jogar(z) {
@@ -284,6 +363,7 @@
     let o = document.getElementById('kids');
     if (!o) { o = h('div', { id: 'kids', class: 'jogo kids' }); document.body.append(o); }
     o.hidden = false;
+    let atual = null; // pergunta em exibição: { p, lista } (para a voz automática)
     const sair = () => { calar(); o.hidden = true; o.replaceChildren(); };
     const estrelas = () => ganhou.filter(Boolean).length;
 
@@ -294,11 +374,12 @@
         ...(temVoz() ? [h('button', { class: 'sec mini kvoz', type: 'button', 'aria-pressed': String(vozAuto),
           textContent: vozAuto ? '🗣️ Voz automática: ligada' : '🗣️ Voz automática: desligada',
           onclick: (e) => {
-            vozAuto = !vozAuto; try { localStorage.setItem(VOZ_KEY, vozAuto ? '1' : '0'); } catch (x) {}
+            vozAuto = !vozAuto; gravarLS(KEY.auto, vozAuto ? '1' : '0');
             e.currentTarget.setAttribute('aria-pressed', String(vozAuto));
             e.currentTarget.textContent = vozAuto ? '🗣️ Voz automática: ligada' : '🗣️ Voz automática: desligada';
-            if (vozAuto) falar(textoCompleto(ps[i])); else calar();
-          } })] : []));
+            if (vozAuto && atual) lerPergunta(atual.p, atual.lista); else calar();
+          } }),
+          h('button', { class: 'sec mini', type: 'button', textContent: '⚙️ Voz', 'aria-label': 'Ajustes da voz de leitura', onclick: configVoz })] : []));
     }
     function tela(...filhos) {
       o.replaceChildren(h('button', { class: 'sair', type: 'button', textContent: 'Sair', onclick: sair }),
@@ -310,9 +391,9 @@
       const fala = h('div', { class: 'fala', role: 'status', textContent: 'Vamos lá!' });
       const proximo = h('button', { class: 'kprox', type: 'button', hidden: true, textContent: i + 1 < ps.length ? '➡️' : '🏆', 'aria-label': i + 1 < ps.length ? 'Próxima pergunta' : 'Ver resultado',
         onclick: () => { i++; if (i < ps.length) { som('toque'); pergunta(); } else final(); } });
-      const ouvir = temVoz() ? h('button', { class: 'sec', type: 'button', textContent: '🔊 Ouvir a pergunta e as opções', onclick: () => falar(textoCompleto(p)) }) : '';
+      const ouvir = temVoz() ? h('button', { class: 'sec', type: 'button', textContent: '🔊 Ouvir a pergunta e as opções', onclick: () => lerPergunta(p, atual.lista) }) : '';
       const botoes = p.op.map((op, k) => ({ op, k })).filter(({ op }) => preenchida(op)).map(({ op, k }) => {
-        const b = h('button', { type: 'button', class: 'kop a' + k, 'aria-label': nomeOp(op) },
+        const b = h('button', { type: 'button', class: 'kop a' + k, 'data-k': k, 'aria-label': nomeOp(op) },
           ...(op.vis ? [Picto.el(op.vis, 72)] : []), ...(op.txt ? [h('span', { class: 'ktxt', textContent: op.txt })] : []));
         b.addEventListener('click', () => {
           if (travado) return;
@@ -320,11 +401,11 @@
             travado = true; b.classList.add('acertou'); confete(b); som('acerto');
             if (!erros) { ganhou[i] = true; const n = o.querySelector('.kn'); if (n) { n.textContent = estrelas(); n.parentElement.classList.remove('pop'); void n.parentElement.offsetWidth; n.parentElement.classList.add('pop'); } }
             fala.textContent = sorteia(FALAS_OK); fala.className = 'fala ok'; proximo.hidden = false; proximo.focus();
-            if (vozAuto) falar(fala.textContent);
+            if (vozAuto) falar(fala.textContent, ANIMADO);
           } else {
             erros++; b.classList.add('errou'); b.disabled = true; som('erro');
             fala.textContent = sorteia(FALAS_ERRO); fala.className = 'fala tente';
-            if (vozAuto) falar(fala.textContent);
+            if (vozAuto) falar(fala.textContent, { pitch: 1.0, rate: 0.9 });
           }
         });
         return b;
@@ -335,7 +416,8 @@
         ...(p.q.trim() ? [h('h2', { class: 'kq', textContent: p.q })] : []), ouvir,
         h('div', { class: 'kops n' + botoes.length }, ...botoes), proximo);
       som('inicio');
-      calar(); if (vozAuto) setTimeout(() => { if (!o.hidden && i < ps.length && ps[i] === p) falar(textoCompleto(p)); }, 700);
+      atual = { p, lista: botoes.map((b) => ({ k: +b.dataset.k, b })) };
+      calar(); if (vozAuto) setTimeout(() => { if (!o.hidden && i < ps.length && ps[i] === p) lerPergunta(p, atual.lista); }, 700);
     }
 
     function final() {
@@ -346,7 +428,7 @@
         h('div', { class: 'acoes' }, h('button', { class: 'grande', type: 'button', textContent: '🔁 Jogar de novo', onclick: () => { ganhou.fill(false); i = 0; pergunta(); } }),
           h('button', { class: 'sec', type: 'button', textContent: 'Sair', onclick: sair })));
       som('vitoria');
-      if (vozAuto) falar(`Você ganhou ${n} de ${total} estrelas!`);
+      if (vozAuto) falar(`Você ganhou ${n} de ${total} estrelas!`, ANIMADO);
       [...linha.children].forEach((s, k) => setTimeout(() => { s.classList.add('on'); if (ganhou[k]) som('estrela', k); if (k === 0 || k === total - 1) confete(s); }, 400 + k * 350));
     }
     pergunta();
