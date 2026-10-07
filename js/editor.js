@@ -16,7 +16,7 @@
   let cache = [], max = 5, maxKids = 3;
 
   const novoId = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(36).padStart(2, '0')).join('');
-  const vazia = () => ({ q: '', op: ['', '', '', ''], c: 0, seg: 0 });
+  const vazia = () => ({ q: '', op: ['', '', '', ''], c: 0, seg: 0, fixa: false });
   const novoQuiz = () => ({ qid: novoId(), tipo: 'normal', titulo: 'Novo quizz', seg: 20, perguntas: [vazia()] });
   const MSG = {
     limite_quizzes: () => `Você atingiu o limite deste tipo de quizz (${max} normais e ${maxKids} Kids). Exclua um para criar outro.`,
@@ -36,6 +36,7 @@
         op: [0, 1, 2, 3].map((i) => String((Array.isArray(x.op) && x.op[i]) || '').slice(0, 80)),
         c: Math.min(3, Math.max(0, parseInt(x.c, 10) || 0)),
         seg: TEMPOS.includes(+x.seg) ? +x.seg : 0,
+        fixa: !!x.fixa,
       });
     }
     return z;
@@ -64,7 +65,7 @@
   // Converte para o formato que o jogo usa (alternativas vazias saem; o índice da certa é recalculado).
   const paraJogo = (z) => z.perguntas.map((p) => {
     const idx = []; p.op.forEach((t, i) => { if (t.trim()) idx.push(i); });
-    return { q: p.q.trim(), op: idx.map((i) => p.op[i].trim()), c: idx.indexOf(p.c), seg: p.seg || 0 };
+    return { q: p.q.trim(), op: idx.map((i) => p.op[i].trim()), c: idx.indexOf(p.c), seg: p.seg || 0, fixa: !!p.fixa };
   });
 
   // ---------- Servidor ----------
@@ -178,6 +179,7 @@
           return h('div', { class: 'qcard', id: 'q' + k },
             h('div', { class: 'qcab' }, h('strong', { textContent: `Pergunta ${k + 1}` }),
               tempoSel(p.seg, (v) => { p.seg = v; salvar(); }, true),
+              h('label', { class: 'fixa', title: 'Mantém as alternativas sempre nesta ordem' }, h('input', { type: 'checkbox', checked: !!p.fixa, onchange: (e) => { p.fixa = e.target.checked; salvar(); } }), '🔒 ordem fixa'),
               h('button', { class: 'sec mini', type: 'button', textContent: '↑', disabled: k === 0, 'aria-label': 'Mover para cima', onclick: () => mover(-1) }),
               h('button', { class: 'sec mini', type: 'button', textContent: '↓', disabled: k === z.perguntas.length - 1, 'aria-label': 'Mover para baixo', onclick: () => mover(1) }),
               h('button', { class: 'sec mini', type: 'button', textContent: 'Duplicar', onclick: () => { if (z.perguntas.length < MAXQ) { z.perguntas.splice(k + 1, 0, JSON.parse(JSON.stringify(p))); salvar(); desenhar(); } } }),
@@ -194,6 +196,10 @@
       el.replaceChildren(
         h('div', { class: 'edtopo' }, titulo, h('label', { class: 'tpadrao' }, 'Tempo padrão ', tempoSel(z.seg, (v) => { z.seg = v || 20; salvar(); }, false)), cont, status),
         lista,
+        h('div', { class: 'acoes ordem' },
+          h('span', { class: 'vazio', textContent: 'As alternativas mudam de posição a cada jogo. Marque 🔒 para manter a ordem (perguntas com "todas as anteriores" ou "ambas" já ficam fixas sozinhas).' }),
+          h('button', { class: 'sec mini', type: 'button', textContent: '🔀 Embaralhar todas', onclick: () => { z.perguntas.forEach((p) => { p.fixa = false; }); salvar(); desenhar(); } }),
+          h('button', { class: 'sec mini', type: 'button', textContent: '🔒 Fixar todas', onclick: () => { z.perguntas.forEach((p) => { p.fixa = true; }); salvar(); desenhar(); } })),
         h('div', { class: 'acoes' }, h('button', { class: 'sec', type: 'button', textContent: '+ Adicionar pergunta', onclick: () => {
           if (z.perguntas.length >= MAXQ) { msg.textContent = `Limite de ${MAXQ} perguntas.`; return; }
           z.perguntas.push(vazia()); salvar(); desenhar(); const u = lista.lastElementChild; if (u) u.querySelector('textarea').focus();
