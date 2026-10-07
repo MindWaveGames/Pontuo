@@ -184,3 +184,9 @@ dialog .sec{background:var(--branco)}
 @keyframes surge{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
 .rk li.me{outline:3px solid var(--amarelo)}
 @media(prefers-reduced-motion:reduce){.podio.anim .col,.podio.anim .bar{transition:none}.coroa,.rk li.surge{animation:none}}
+
+/* ordem das alternativas */
+.fixa{display:inline-flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;cursor:pointer}
+.fixa input{width:20px;height:20px;accent-color:var(--amarelo)}
+.acoes.ordem{align-items:center;margin:6px 0 2px}
+.acoes.ordem .vazio{flex:1 1 260px;margin:0}
