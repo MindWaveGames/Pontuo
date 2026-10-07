@@ -63,3 +63,16 @@
 @media(prefers-reduced-motion:reduce){.masc,.kprox,.kfigs .picto,.kop.acertou,.kop.errou,.kpontos.pop{animation:none}.kest{transform:none;opacity:1}.kest.on{animation:none}.kest.off{filter:grayscale(1);opacity:.4}}
 .kvoz{min-height:44px}
 .kvoz[aria-pressed="true"]{background:var(--amarelo)}
+
+/* voz */
+.masc.falando{animation:fala .4s ease-in-out infinite alternate}
+@keyframes fala{from{transform:rotate(-7deg) scale(1)}to{transform:rotate(7deg) scale(1.14)}}
+.kop.lendo{outline:6px solid #fff;transform:scale(1.05);transition:transform .15s}
+.kcfg{border:3px solid var(--marinho);border-radius:20px;padding:16px;max-width:460px;width:94%;color:var(--marinho)}
+.kcfg::backdrop{background:#17134e99}
+.kcfg label{display:flex;flex-direction:column;gap:4px;margin:10px 0;font-weight:700}
+.kcfg select{padding:10px;border:3px solid var(--marinho);border-radius:12px;font-size:1rem;color:var(--marinho);background:#fff;max-width:100%}
+.kcfg .sec{margin:6px 6px 6px 0}
+.kcfg .dicas{margin:10px 0;font-size:.9rem}
+.kcfg .dicas summary{cursor:pointer;font-weight:700}
+@media(prefers-reduced-motion:reduce){.masc.falando{animation:none}.kop.lendo{transform:none}}
