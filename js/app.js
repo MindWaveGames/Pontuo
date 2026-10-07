@@ -19,7 +19,7 @@ const PROF_BASE = { avatar: null, nivel: 1, pontos: 0, de: 0, ate: 5000, partida
 
 // ---------- Carregamento sob demanda ----------
 // Suba este número a cada atualização do site: força o navegador a baixar os arquivos novos (sem depender de Ctrl+F5).
-const VERSAO = '9';
+const VERSAO = '10';
 const comVersao = (u) => (u && !/^https?:/.test(u) ? `${u}?v=${VERSAO}` : u);
 const carregar = (tag, attrs) => new Promise((ok, no) => {
   const real = { ...attrs };
