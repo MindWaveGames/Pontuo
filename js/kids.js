@@ -15,7 +15,7 @@
   const novoId = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(36).padStart(2, '0')).join('');
   const som = (n, ...a) => { if (window.Som) Som.tocar(n, ...a); };
   const reduz = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
-  const vazia = () => ({ q: '', vis: [], op: [0, 1, 2, 3].map(() => ({ vis: '', txt: '' })), c: 0 });
+  const vazia = () => ({ q: '', vis: [], op: [0, 1, 2, 3].map(() => ({ vis: '', txt: '' })), c: 0, fixa: false });
   const novoQuiz = () => ({ qid: novoId(), tipo: 'kids', titulo: 'Nova atividade Kids', seg: 0, perguntas: [vazia()] });
   const preenchida = (o) => !!(o.vis || o.txt.trim());
 
@@ -30,6 +30,7 @@
         vis: (Array.isArray(x.vis) ? x.vis : []).filter((v) => Picto.valido(v)).slice(0, 5),
         op: [0, 1, 2, 3].map((i) => { const a = (Array.isArray(x.op) && x.op[i]) || {}; return { vis: Picto.valido(a.vis) ? a.vis : '', txt: String(a.txt || '').slice(0, 20) }; }),
         c: Math.min(3, Math.max(0, parseInt(x.c, 10) || 0)),
+        fixa: !!x.fixa,
       });
     }
     return z;
@@ -85,7 +86,7 @@
       if (c < 0) return ign('faltou marcar a alternativa certa com *');
       if (ops.filter((o) => o.vis || o.txt).length < 2 || !(ops[c].vis || ops[c].txt)) return ign('as alternativas estão vazias');
       while (ops.length < 4) ops.push({ vis: '', txt: '' });
-      perguntas.push({ q: q.texto.slice(0, 100), vis: q.figs.slice(0, 5), op: ops.map((o) => ({ vis: o.vis, txt: o.txt })), c });
+      perguntas.push({ q: q.texto.slice(0, 100), vis: q.figs.slice(0, 5), op: ops.map((o) => ({ vis: o.vis, txt: o.txt })), c, fixa: false });
     });
     return { perguntas, ignorados, cortados };
   }
@@ -172,6 +173,7 @@
         const mover = (d) => { const j = k + d; [z.perguntas[k], z.perguntas[j]] = [z.perguntas[j], z.perguntas[k]]; salvar(); desenhar(); };
         return h('div', { class: 'qcard', id: 'q' + k },
           h('div', { class: 'qcab' }, h('strong', { textContent: `Pergunta ${k + 1}` }),
+            h('label', { class: 'fixa', title: 'Mantém as alternativas sempre nesta ordem' }, h('input', { type: 'checkbox', checked: !!p.fixa, onchange: (e) => { p.fixa = e.target.checked; salvar(); } }), '🔒 ordem fixa'),
             h('button', { class: 'sec mini', type: 'button', textContent: '↑', disabled: k === 0, 'aria-label': 'Mover para cima', onclick: () => mover(-1) }),
             h('button', { class: 'sec mini', type: 'button', textContent: '↓', disabled: k === z.perguntas.length - 1, 'aria-label': 'Mover para baixo', onclick: () => mover(1) }),
             h('button', { class: 'sec mini', type: 'button', textContent: 'Duplicar', onclick: () => { if (z.perguntas.length < MAXQ) { z.perguntas.splice(k + 1, 0, JSON.parse(JSON.stringify(p))); salvar(); desenhar(); } } }),
@@ -209,6 +211,10 @@
     el.replaceChildren(
       h('p', { class: 'vazio', textContent: '🧸 Atividade Kids: o professor conduz com as crianças, sem alunos conectados. Pergunte em voz alta e toque na resposta que a turma escolher.' }),
       h('div', { class: 'edtopo' }, titulo, cont, status), lista,
+      h('div', { class: 'acoes ordem' },
+        h('span', { class: 'vazio', textContent: 'As alternativas mudam de lugar (e de cor) a cada jogo. Marque 🔒 para manter a ordem, por exemplo em contagens 1, 2, 3.' }),
+        h('button', { class: 'sec mini', type: 'button', textContent: '🔀 Embaralhar todas', onclick: () => { z.perguntas.forEach((p) => { p.fixa = false; }); salvar(); desenhar(); } }),
+        h('button', { class: 'sec mini', type: 'button', textContent: '🔒 Fixar todas', onclick: () => { z.perguntas.forEach((p) => { p.fixa = true; }); salvar(); desenhar(); } })),
       h('div', { class: 'acoes' }, h('button', { class: 'sec', type: 'button', textContent: '+ Adicionar pergunta', onclick: () => {
         if (z.perguntas.length >= MAXQ) { msg.textContent = `Limite de ${MAXQ} perguntas.`; return; }
         z.perguntas.push(vazia()); salvar(); desenhar();
@@ -358,7 +364,10 @@
   }
 
   function jogar(z) {
-    const ps = z.perguntas, ganhou = ps.map(() => false);
+    // Cada partida embaralha as alternativas de novo (a certa acompanha o texto); "Jogar de novo" também.
+    const preparar = () => z.perguntas.map((p) => (window.Ordem ? Ordem.embaralhar(p, preenchida, (op) => op.txt) : p));
+    let ps = preparar();
+    const ganhou = ps.map(() => false);
     let i = 0, erros = 0, travado = false;
     let o = document.getElementById('kids');
     if (!o) { o = h('div', { id: 'kids', class: 'jogo kids' }); document.body.append(o); }
@@ -425,7 +434,7 @@
       const linha = h('div', { class: 'kestrelas', 'aria-label': `${n} de ${total} estrelas` }, ...ganhou.map((g) => h('span', { class: 'kest' + (g ? '' : ' off'), textContent: '⭐' })));
       tela(h('h2', { class: 'kfim', textContent: n === total ? '🎉 Perfeito! 🎉' : n ? '🎉 Parabéns! 🎉' : 'Muito bem por tentar!' }), linha,
         h('p', { class: 'kq', textContent: `Você ganhou ${n} de ${total} estrelas!` }),
-        h('div', { class: 'acoes' }, h('button', { class: 'grande', type: 'button', textContent: '🔁 Jogar de novo', onclick: () => { ganhou.fill(false); i = 0; pergunta(); } }),
+        h('div', { class: 'acoes' }, h('button', { class: 'grande', type: 'button', textContent: '🔁 Jogar de novo', onclick: () => { ps = preparar(); ganhou.fill(false); i = 0; pergunta(); } }),
           h('button', { class: 'sec', type: 'button', textContent: 'Sair', onclick: sair })));
       som('vitoria');
       if (vozAuto) falar(`Você ganhou ${n} de ${total} estrelas!`, ANIMADO);
