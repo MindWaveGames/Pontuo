@@ -77,6 +77,8 @@
 
   // ---------- Host (professor) ----------
   function hospedar(quiz, segPadrao) {
+    // Cada jogo embaralha as alternativas de novo (todos os alunos veem a mesma ordem). A certa acompanha o texto.
+    if (window.Ordem) quiz = quiz.map((p) => Ordem.embaralhar(p));
     let seg = segPadrao; // tempo da pergunta atual (cada pergunta pode ter o seu)
     const jog = new Map(); // jid -> { nome, av, tk, pts, r, g, res, fim, c }
     const banidos = new Set(); // jid de quem foi removido pelo professor: não entra de novo
