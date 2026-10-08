@@ -19,7 +19,7 @@ const PROF_BASE = { avatar: null, nivel: 1, pontos: 0, de: 0, ate: 5000, partida
 
 // ---------- Carregamento sob demanda ----------
 // Suba este número a cada atualização do site: força o navegador a baixar os arquivos novos (sem depender de Ctrl+F5).
-const VERSAO = '11';
+const VERSAO = '12';
 const comVersao = (u) => (u && !/^https?:/.test(u) ? `${u}?v=${VERSAO}` : u);
 const carregar = (tag, attrs) => new Promise((ok, no) => {
   const real = { ...attrs };
@@ -230,6 +230,21 @@ $('#f-sala').addEventListener('submit', async (e) => {
   if (vazio) vazio.replaceWith(hist); else interno.append(hist);
   $('#f-sala').insertBefore(h('p', { id: 'quem-sala', class: 'quem-sala', hidden: true }), $('#apelido'));
 
+  // Chave do professor: os traços são opcionais. Ao digitar ou colar, o campo põe os traços sozinho (XXXX-XXXX-...).
+  const chave = $('#chave');
+  chave.maxLength = 40; chave.autocapitalize = 'characters'; chave.spellcheck = false; chave.setAttribute('autocomplete', 'off');
+  chave.insertAdjacentElement('afterend', h('small', { class: 'vazio', textContent: 'Pode digitar com ou sem os traços.' }));
+  chave.addEventListener('input', () => {
+    const antes = chave.value.slice(0, chave.selectionStart == null ? chave.value.length : chave.selectionStart);
+    const quantos = antes.replace(/[^a-z0-9]/gi, '').length; // letras/números antes do cursor
+    const fmt = chave.value.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 32).replace(/(.{4})(?=.)/g, '$1-');
+    if (fmt === chave.value) return;
+    chave.value = fmt;
+    let pos = 0, n = 0;
+    while (pos < fmt.length && n < quantos) { if (fmt[pos] !== '-') n++; pos++; } // o cursor não pula ao editar no meio
+    try { chave.setSelectionRange(pos, pos); } catch (e) {}
+  });
+
   const s = Api.sessao();
   if (s && await Api.valida()) {
     prof = { nome: s.nome, ...PROF_BASE };
@@ -239,4 +254,4 @@ $('#f-sala').addEventListener('submit', async (e) => {
 
   const sala = new URLSearchParams(location.search).get('sala');
   if (sala) { $('#sala').value = sala.toUpperCase().slice(0, 8); ir('entrar'); } else ir(location.hash.slice(1));
-})();
+})().catch((e) => console.error('Erro ao iniciar o Pontuô:', e));
