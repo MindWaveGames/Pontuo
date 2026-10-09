@@ -49,6 +49,7 @@ const Api = (() => {
       async perfil() { try { return (await comProf('professor_perfil.php', {})).professor; } catch (e) { return null; } },
       async editar(c) { return (await comProf('perfil_editar.php', c)).professor; },
       quizzes: (acao, extra = {}) => comProf('quizzes.php', { acao, ...extra }),
+      relatorios: (acao, extra = {}) => comProf('relatorios.php', { acao, ...extra }),
     },
 
     // ----- aluno -----
