@@ -13,7 +13,9 @@
     for (let k = ordem.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [ordem[k], ordem[j]] = [ordem[j], ordem[k]]; }
     const op = p.op.slice();
     slots.forEach((slot, n) => { op[slot] = p.op[ordem[n]]; });
-    return { ...p, op, c: slots[ordem.indexOf(p.c)] };
+    const perm = p.op.map((_, k) => k); // perm[posição nova] = posição original
+    slots.forEach((slot, n) => { perm[slot] = ordem[n]; });
+    return { ...p, op, c: slots[ordem.indexOf(p.c)], _perm: perm };
   }
   window.Ordem = { embaralhar, depende: (t) => DEPENDE.test(String(t)) };
 })();
