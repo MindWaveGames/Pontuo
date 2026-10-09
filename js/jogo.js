@@ -69,16 +69,18 @@
   }
 
   // Confere a licença no servidor e abre a sala. Devolve um texto de erro, ou null se abriu.
-  async function abrirSala(quiz, seg) {
+  async function abrirSala(quiz, seg, titulo) {
     if (!(await Api.valida())) return 'Sua sessão expirou. Entre com a chave novamente.';
-    hospedar(quiz, seg);
+    hospedar(quiz, seg, titulo);
     return null;
   }
 
   // ---------- Host (professor) ----------
-  function hospedar(quiz, segPadrao) {
+  function hospedar(quiz, segPadrao, titulo = '') {
     // Cada jogo embaralha as alternativas de novo (todos os alunos veem a mesma ordem). A certa acompanha o texto.
+    const originais = quiz; // ordem original das alternativas: o relatório conta nela
     if (window.Ordem) quiz = quiz.map((p) => Ordem.embaralhar(p));
+    const stats = []; // estatísticas por pergunta, para o relatório
     let seg = segPadrao; // tempo da pergunta atual (cada pergunta pode ter o seu)
     const jog = new Map(); // jid -> { nome, av, tk, pts, r, g, res, fim, c }
     const banidos = new Set(); // jid de quem foi removido pelo professor: não entra de novo
@@ -122,6 +124,7 @@
         tk: typeof m.tk === 'string' && m.tk.length <= 300 ? m.tk : '',
         pts: 0, r: null, g: 0, c,
       };
+      j.hist = [];
       jog.set(jid, j); c._jid = jid; enviar(j, { t: 'ok' }); lobby();
     }
 
@@ -215,6 +218,14 @@
       if (fase !== 'pergunta') return; clearTimeout(timer); fase = 'resultado';
       const p = quiz[i], n = p.op.map(() => 0);
       jog.forEach((j) => { if (j.r) { n[j.r.op]++; if (j.r.op === p.c) { j.g = Math.round(1000 * (1 - .5 * Math.min(j.r.ms, seg * 1000) / (seg * 1000))); j.pts += j.g; } } });
+      // Relatório: contagem por alternativa (na ordem ORIGINAL do quizz), tempo médio e quem não respondeu.
+      const orig = originais[i], cont = [0, 0, 0, 0]; let soma = 0, resp = 0;
+      jog.forEach((j) => {
+        const ms = j.r ? Math.min(j.r.ms, seg * 1000) : null;
+        if (j.r) { cont[p._perm ? p._perm[j.r.op] : j.r.op]++; resp++; soma += ms; }
+        j.hist[i] = { ok: !!j.r && j.r.op === p.c, ms };
+      });
+      stats[i] = { q: orig.q, op: [0, 1, 2, 3].map((k) => orig.op[k] || ''), c: orig.c, n: cont, sem: jog.size - resp, ms: resp ? Math.round(soma / resp) : 0 };
       const rk = rank();
       jog.forEach((j) => { j.res = { t: 'resultado', c: p.c, ok: !!j.r && j.r.op === p.c, g: j.g, pts: j.pts, pos: rk.indexOf(j) + 1, de: rk.length }; enviar(j, j.res); });
       tela(h('h2', { textContent: p.q }), opcoes(p.op, null, { c: p.c, n }), h('h3', { textContent: 'Ranking' }), lista(rk),
@@ -224,22 +235,41 @@
       fase = 'fim'; const rk = rank(), top = rk.slice(0, 10).map((j) => ({ nome: j.nome, pts: j.pts, av: j.av }));
       rk.forEach((j, n) => { j.fim = { t: 'fim', top, pts: j.pts, pos: n + 1, de: rk.length }; enviar(j, j.fim); });
       const jogadores = rk.map((j, n) => ({ tk: j.tk, pontos: j.pts, pos: n + 1 })).filter((j) => j.tk);
+      // Relatório completo (com nomes) só existe aqui, no navegador do professor. O servidor recebe só o resumo por pergunta.
+      const rel = { titulo, sala: codigo, quando: Math.floor(Date.now() / 1000), participantes: rk.length, perguntas: stats,
+        jogadores: rk.map((j) => {
+          const resp = j.hist.filter((x) => x && x.ms !== null);
+          return { nome: j.nome, av: j.av, pontos: j.pts, acertos: j.hist.filter((x) => x && x.ok).length, respondidas: resp.length,
+            ms: resp.length ? resp.reduce((a, x) => a + x.ms, 0) / resp.length : 0,
+            res: stats.map((_, k) => { const x = j.hist[k]; return !x || x.ms === null ? 's' : x.ok ? 'c' : 'e'; }) };
+        }) };
+      const resumo = { titulo, participantes: rk.length, perguntas: stats };
       const estadoReg = h('p', { class: 'msg', role: 'status' });
       const tentar = h('button', { class: 'sec', textContent: 'Tentar registrar de novo', hidden: true, onclick: () => salvar() });
       async function salvar() {
         estadoReg.textContent = 'Registrando a partida…'; tentar.hidden = true;
         try {
-          const d = await Api.partida({ pid, sala: codigo, perguntas: quiz.length, total: rk.length, jogadores });
+          const d = await Api.partida({ pid, sala: codigo, perguntas: quiz.length, total: rk.length, jogadores, resumo });
           estadoReg.textContent = d.ja_registrada ? 'Partida já estava registrada. ✓'
-            : `Partida registrada! Você ganhou ${d.pontos_professor} pontos${d.creditados ? ` e ${d.creditados} aluno(s) com conta pontuaram` : ''}. ✓`;
+            : `Partida registrada! Você ganhou ${d.pontos_professor} pontos${d.creditados ? ` e ${d.creditados} aluno(s) com conta pontuaram` : ''}.${d.relatorio_salvo ? ' O relatório foi guardado no seu histórico.' : ''} ✓`;
           window.dispatchEvent(new Event('pontuo:atualizar'));
         } catch (e) { estadoReg.textContent = 'Não foi possível registrar a partida (internet ou sessão expirada).'; tentar.hidden = false; }
       }
       const todos = rk.map((j) => ({ nome: j.nome, pontos: j.pts, avatar: j.av }));
-      tela(h('h2', { textContent: 'Resultado final' }),
-        ...(window.Podio ? [Podio.criar(todos.slice(0, 3), { animar: true }), Podio.lista(todos.slice(3), { inicio: 3, animar: true, atraso: 4200 })] : [lista(rk, 10)]),
-        estadoReg, tentar,
-        h('button', { class: 'grande', textContent: 'Fechar', onclick: () => { fechar(); document.getElementById('jogo').hidden = true; } }));
+      const sairDaSala = h('button', { class: 'grande', textContent: 'Fechar', onclick: () => { fechar(); document.getElementById('jogo').hidden = true; } });
+      function telaFinal(animar) {
+        tela(h('h2', { textContent: 'Resultado final' }),
+          ...(window.Podio ? [Podio.criar(todos.slice(0, 3), { animar }), Podio.lista(todos.slice(3), { inicio: 3, animar, atraso: 4200 })] : [lista(rk, 10)]),
+          estadoReg, tentar,
+          ...(window.Relatorio ? [h('button', { class: 'grande', textContent: '📊 Ver relatório da sala', onclick: telaRelatorio })] : []), sairDaSala);
+      }
+      function telaRelatorio() {
+        tela(h('h2', { textContent: 'Relatório da sala' }),
+          Relatorio.criar(rel, { nota: 'Os nomes ficam só no seu navegador. No servidor é guardado apenas o resumo por pergunta, sem nomes.' }),
+          Relatorio.botoesCsv(rel), estadoReg, tentar,
+          h('button', { class: 'sec', textContent: '← Voltar ao resultado', onclick: () => telaFinal(false) }), sairDaSala);
+      }
+      telaFinal(true);
       salvar();
     }
     abrir();
