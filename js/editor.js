@@ -79,14 +79,22 @@
   async function excluir(qid) { await api('excluir', { qid }); cache = cache.filter((x) => x.qid !== qid); }
   const legados = () => { try { const l = JSON.parse(localStorage.getItem(LOCAL)); return Array.isArray(l) ? l : []; } catch (e) { return []; } };
 
-  function montar(el, abrirSala) {
+  function montar(raiz, abrirSala) {
+    // Duas abas: "Meus quizzes" (biblioteca e editores) e "Relatórios" (histórico das salas). "el" é a área de conteúdo.
+    const el = h('div', { class: 'quizz-area' });
+    const aba = (nome, rotulo, abrir) => h('button', { type: 'button', class: 'aba', role: 'tab', 'data-aba': nome, textContent: rotulo, onclick: () => { marcar(nome); abrir(); } });
+    const marcar = (nome) => abas.querySelectorAll('.aba').forEach((b) => { const on = b.dataset.aba === nome; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
+    const abas = h('div', { class: 'abas', role: 'tablist' },
+      aba('quizzes', '📚 Meus quizzes', () => { el.replaceChildren(h('p', { class: 'vazio', textContent: 'Carregando seus quizzes…' })); carregarLista().then(biblioteca).catch(falha); }),
+      aba('relatorios', '📊 Relatórios', () => { if (window.Relatorio) Relatorio.historico(el); else el.textContent = 'Não foi possível carregar os relatórios.'; }));
+    raiz.replaceChildren(abas, el); marcar('quizzes');
+    const falha = (e) => el.replaceChildren(h('p', { class: 'msg', textContent: erroTexto(e) }), h('button', { class: 'sec', textContent: 'Tentar de novo', onclick: () => montar(raiz, abrirSala) }));
     el.replaceChildren(h('p', { class: 'vazio', textContent: 'Carregando seus quizzes…' }));
-    carregarLista().then(biblioteca).catch((e) => el.replaceChildren(h('p', { class: 'msg', textContent: erroTexto(e) }),
-      h('button', { class: 'sec', textContent: 'Tentar de novo', onclick: () => montar(el, abrirSala) })));
+    carregarLista().then(biblioteca).catch(falha);
 
     // Abre a sala (normal) ou o jogo conduzido pelo professor (Kids). Devolve um texto de erro, ou null.
     const iniciar = async (z) => {
-      if (z.tipo !== 'kids') return abrirSala(paraJogo(z), z.seg);
+      if (z.tipo !== 'kids') return abrirSala(paraJogo(z), z.seg, z.titulo);
       if (!(await Api.valida())) return MSG.token_invalido();
       Kids.jogar(z); return null;
     };
@@ -217,7 +225,7 @@
             if (pr) { msg.textContent = pr.msg; const c = pr.k >= 0 && document.getElementById('q' + pr.k); if (c) { c.classList.add('invalida'); c.scrollIntoView({ block: 'center' }); setTimeout(() => c.classList.remove('invalida'), 2500); } return; }
             msg.textContent = 'Salvando e verificando licença…';
             if (!(await salvarJa())) { msg.textContent = 'Não foi possível salvar o quizz. Verifique a internet.'; return; }
-            const erro = await abrirSala(paraJogo(z), z.seg); msg.textContent = erro || '';
+            const erro = await abrirSala(paraJogo(z), z.seg, z.titulo); msg.textContent = erro || '';
           } }),
           h('button', { class: 'sec', type: 'button', textContent: 'Exportar arquivo', onclick: () => {
             const blob = new Blob([JSON.stringify({ titulo: z.titulo, seg: z.seg, perguntas: z.perguntas }, null, 1)], { type: 'application/json' });
