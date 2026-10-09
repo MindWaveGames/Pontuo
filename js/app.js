@@ -19,7 +19,7 @@ const PROF_BASE = { avatar: null, nivel: 1, pontos: 0, de: 0, ate: 5000, partida
 
 // ---------- Carregamento sob demanda ----------
 // Suba este número a cada atualização do site: força o navegador a baixar os arquivos novos (sem depender de Ctrl+F5).
-const VERSAO = '12';
+const VERSAO = '13';
 const comVersao = (u) => (u && !/^https?:/.test(u) ? `${u}?v=${VERSAO}` : u);
 const carregar = (tag, attrs) => new Promise((ok, no) => {
   const real = { ...attrs };
@@ -41,6 +41,8 @@ const carregarJogo = () => _jogo || (_jogo = Promise.all([
 ]).then(() => carregar('script', { src: 'js/jogo.js' })).then(() => window.Jogo));
 const carregarEditor = () => _editor || (_editor = Promise.all([
   carregar('link', { rel: 'stylesheet', href: 'css/kids.css' }),
+  carregar('link', { rel: 'stylesheet', href: 'css/relatorio.css' }),
+  carregar('script', { src: 'js/relatorio.js' }),
   carregar('script', { src: 'js/pictos.js' }),
   carregar('script', { src: 'js/kids.js' }),
   carregar('script', { src: 'js/editor.js' }),
